@@ -2,21 +2,21 @@ import crypto from "crypto";
 
 export class CryptoManager {
 
-  static deriveKey(sharedSecret: string) {
+  static deriveKey(rootKey: string) {
 
     return crypto
       .createHash("sha256")
-      .update(sharedSecret)
+      .update(rootKey)
       .digest();
   }
 
   static encrypt(
     plaintext: string,
-    sharedSecret: string
+    rootKey: string
   ) {
 
     const key =
-      this.deriveKey(sharedSecret);
+      this.deriveKey(rootKey);
 
     const iv =
       crypto.randomBytes(12);
@@ -51,11 +51,11 @@ export class CryptoManager {
     encrypted: string,
     iv: string,
     tag: string,
-    sharedSecret: string
+    rootKey: string
   ) {
 
     const key =
-      this.deriveKey(sharedSecret);
+      this.deriveKey(rootKey);
 
     const decipher =
       crypto.createDecipheriv(
