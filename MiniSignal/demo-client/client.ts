@@ -3,20 +3,30 @@ import WebSocket from "ws";
 
 import { CryptoManager } from "./crypto/crypto";
 import { IdentityManager } from "./identity/identity";
-import { SessionManager } from "./session/session";
 import { PreKeyManager } from "./prekey/prekey";
+import { DHRatchetManager } from "./session/dhRatchet";
+import { RatchetManager } from "./session/ratchet";
+import { ReplayProtection } from "./session/replayProtection";
+import { SessionStore } from "./session/sessionStore";
+import { SkippedKeyStore } from "./session/skippedKeys";
 import { X3DHManager } from "./session/x3dh";
 
 const userId =
   process.argv[2];
 
-const targetId =
+const deviceId =
   process.argv[3];
 
-if (!userId || !targetId) {
+const targetId =
+  process.argv[4];
+
+const targetDeviceId =
+  process.argv[5];
+
+if (!userId || !deviceId || !targetId || !targetDeviceId) {
 
   console.log(
-    "usage: npx ts-node client.ts alice bob"
+    "usage: npx ts-node client.ts alice desktop bob phone"
   );
 
   process.exit(0);
@@ -30,7 +40,49 @@ const preKeys =
     identity.getPrivateKey()
   );
 
-let rootKey = "";
+let chainKey: Buffer;
+
+let sendCounter = 0;
+
+let receiveCounter = 0;
+
+// 新增: 用于存储待发送的消息
+let pendingMessage: string | null = null;
+
+const savedSession =
+  SessionStore.load(
+    userId,
+    targetId
+  );
+
+if (savedSession) {
+
+  if (
+    savedSession.version !== 1
+  ) {
+
+    console.log(
+      "session version mismatch"
+    );
+
+    process.exit(1);
+  }
+
+  chainKey =
+    Buffer.from(
+      savedSession.chainKey,
+      "base64"
+    );
+
+  console.log(
+    "session restored"
+  );
+}
+
+let ratchetKey =
+  require(
+    "@signalapp/libsignal-client"
+  ).PrivateKey.generate();
 
 const ws =
   new WebSocket(
@@ -47,6 +99,7 @@ ws.on("open", () => {
     JSON.stringify({
       type: "login",
       userId,
+      deviceId,
       publicKey:
         identity.getPublicKeyBase64()
     })
@@ -59,28 +112,13 @@ ws.on("open", () => {
 
       userId,
 
+      deviceId,
+
       bundle:
         preKeys.getBundle()
     })
   );
 
-  setInterval(() => {
-
-    if (rootKey) {
-      return;
-    }
-
-    ws.send(
-      JSON.stringify({
-        type:
-          "getPreKeyBundle",
-
-        target:
-          targetId
-      })
-    );
-
-  }, 2000);
 });
 
 ws.on("message", (data) => {
@@ -99,7 +137,7 @@ ws.on("message", (data) => {
         "bundle not available"
       );
 
-      return;
+        return;
     }
 
     const {
@@ -144,8 +182,20 @@ ws.on("message", (data) => {
         remoteOneTimePreKey
       );
 
-    rootKey =
-      result.rootKey;
+    // 修复: Buffer.from 默认使用 utf8 编码，必须指定 base64 以正确解码密钥
+    chainKey =
+      Buffer.from(result.rootKey, 'base64');
+
+    SessionStore.save(
+      userId,
+      targetId,
+      {
+        chainKey:
+          chainKey.toString(
+            "base64"
+          )
+      }
+    );
 
     console.log(
       "X3DH initiator session established"
@@ -161,8 +211,13 @@ ws.on("message", (data) => {
         from:
           userId,
 
+        fromDeviceId:
+          deviceId,
+
         target:
           targetId,
+
+        targetDeviceId,
 
         ephemeralPublic:
           result.ephemeralPublic,
@@ -172,6 +227,89 @@ ws.on("message", (data) => {
             .getPublicKeyBase64()
       })
     );
+
+    // 新增: 如果有待发送的消息，立即发送
+    if (pendingMessage) {
+      console.log("Sending pending message...");
+      
+      // 复制 rl.on('line') 中的加密逻辑
+      // 注意：这里需要生成一个新的 Ephemeral Key 用于第一条消息的 DH Ratchet
+      // 原有的 ratchetKey 是在文件顶部生成的，可能需要重新生成或复用
+      // 为了简化，我们复用现有的 ratchetKey 逻辑，但需要注意状态同步
+      
+      // 1. 执行 DH Ratchet Step (生成新的 DH 公钥和更新 Root Key/Chain Key)
+      // 这里的逻辑与 rl.on('line') 一致
+      const dhStep =
+        DHRatchetManager
+          .ratchetStep(
+
+            ratchetKey,
+
+            ratchetKey.getPublicKey(),
+
+            chainKey
+          );
+
+      chainKey =
+        Buffer.from(
+          dhStep.nextRootKey
+        );
+
+      SessionStore.save(
+        userId,
+        targetId,
+        {
+          chainKey:
+            chainKey.toString(
+              "base64"
+            )
+        }
+      );
+
+      const ratchet =
+        RatchetManager.kdfChain(
+          chainKey
+        );
+
+      chainKey =
+        ratchet.nextChainKey;
+
+      SessionStore.save(
+        userId,
+        targetId,
+        {
+          chainKey:
+            chainKey.toString(
+              "base64"
+            )
+        }
+      );
+
+      const encrypted =
+        CryptoManager.encrypt(
+          pendingMessage,
+          ratchet.messageKey
+            .toString("base64")
+        );
+
+      ws.send(
+        JSON.stringify({
+          type: "message",
+          from: userId,
+          fromDeviceId: deviceId,
+          target: targetId,
+          targetDeviceId,
+          messageNumber:
+            sendCounter++,
+          payload: encrypted,
+          dhPublicKey:
+            dhStep.publicKey
+        })
+      );
+
+      pendingMessage = null;
+      console.log("Pending message sent.");
+    }
 
     return;
   }
@@ -203,19 +341,33 @@ ws.on("message", (data) => {
         )
       );
 
-    rootKey =
-      X3DHManager.responder(
+    chainKey =
+      Buffer.from(
+        X3DHManager.responder(
 
-        identity.getPrivateKey(),
+          identity.getPrivateKey(),
 
-        preKeys.getSignedPreKeyPrivate(),
+          preKeys.getSignedPreKeyPrivate(),
 
-        preKeys.getOneTimePreKeyPrivate(),
+          preKeys.getOneTimePreKeyPrivate(),
 
-        remoteEphemeral,
+          remoteEphemeral,
 
-        remoteIdentity
+          remoteIdentity
+        ),
+        "base64"
       );
+
+    SessionStore.save(
+      userId,
+      targetId,
+      {
+        chainKey:
+          chainKey.toString(
+            "base64"
+          )
+      }
+    );
 
     console.log(
       "X3DH responder session established"
@@ -226,18 +378,214 @@ ws.on("message", (data) => {
 
   if (msg.type === "message") {
 
-    const decrypted =
-      CryptoManager.decrypt(
-        msg.payload.encrypted,
-        msg.payload.iv,
-        msg.payload.tag,
-        rootKey
+    if (
+      ReplayProtection.seen(
+        msg.from,
+        msg.messageNumber
+      )
+    ) {
+
+      console.log(
+        "replay attack detected"
       );
 
-    console.log();
-    console.log(
-      `[${msg.from}] ${decrypted}`
+      return;
+    }
+
+    const incoming =
+      msg.messageNumber;
+
+    // 检查是否是旧消息（跳过密钥）
+    if (
+      SkippedKeyStore.has(
+        incoming
+      )
+    ) {
+
+      const skippedKey =
+        SkippedKeyStore.get(
+          incoming
+        );
+
+      // 解析 payload 获取加密组件
+      let payloadData: any = msg.payload;
+      if (typeof msg.payload === 'string') {
+        try {
+          payloadData = JSON.parse(msg.payload);
+        } catch (e) {
+          console.error("Failed to parse payload as JSON for skipped key");
+          return;
+        }
+      }
+      
+      // 确保字段存在 (注意发送端使用的是 encrypted)
+      if (!payloadData.encrypted || !payloadData.iv || !payloadData.tag) {
+         console.error("Missing fields in payload for skipped key decryption", payloadData);
+         return;
+      }
+
+      try {
+        const decrypted =
+          CryptoManager.decrypt(
+            payloadData.encrypted,
+            payloadData.iv,
+            payloadData.tag,
+            skippedKey!
+          );
+
+        console.log(
+          `\n${msg.from}:`,
+          decrypted
+        );
+      } catch (err) {
+        console.error("Failed to decrypt skipped message:", err);
+        console.error("Skipped Key (base64):", skippedKey);
+        console.error("Payload IV:", payloadData.iv);
+        console.error("Payload Tag:", payloadData.tag);
+        console.error("Payload Encrypted Length:", payloadData.encrypted?.length);
+      }
+
+      ReplayProtection.mark(
+        msg.from,
+        msg.messageNumber
+      );
+
+      return;
+    }
+
+    while (
+      receiveCounter <
+      incoming
+    ) {
+
+      const ratchet =
+        RatchetManager
+          .kdfChain(
+            chainKey
+          );
+
+      chainKey =
+        ratchet.nextChainKey;
+
+      SkippedKeyStore.save(
+
+        receiveCounter,
+
+        ratchet.messageKey
+          .toString("base64")
+      );
+
+      receiveCounter++;
+    }
+
+    if (msg.dhPublicKey) {
+
+      const {
+        PublicKey
+      } = require(
+        "@signalapp/libsignal-client"
+      );
+
+      const remoteRatchet =
+        PublicKey.deserialize(
+          Buffer.from(
+            msg.dhPublicKey,
+            "base64"
+          )
+        );
+
+      const dhStep =
+        DHRatchetManager
+          .ratchetStep(
+
+            ratchetKey,
+
+            remoteRatchet,
+
+            chainKey
+          );
+
+      chainKey =
+        Buffer.from(
+          dhStep.nextRootKey
+        );
+
+      SessionStore.save(
+        userId,
+        targetId,
+        {
+          chainKey:
+            chainKey.toString(
+              "base64"
+            )
+        }
+      );
+    }
+
+    const ratchet =
+      RatchetManager.kdfChain(
+        chainKey
+      );
+
+    receiveCounter++;
+
+    chainKey =
+      ratchet.nextChainKey;
+
+    SessionStore.save(
+      userId,
+      targetId,
+      {
+        chainKey:
+          chainKey.toString(
+            "base64"
+          )
+      }
     );
+
+    // 解析 payload 获取加密组件
+    let payloadData: any = msg.payload;
+    if (typeof msg.payload === 'string') {
+      try {
+        payloadData = JSON.parse(msg.payload);
+      } catch (e) {
+        console.error("Failed to parse payload as JSON for current message");
+        return;
+      }
+    }
+
+    // 确保字段存在 (注意发送端使用的是 encrypted)
+    if (!payloadData.encrypted || !payloadData.iv || !payloadData.tag) {
+       console.error("Missing fields in payload for current message decryption", payloadData);
+       return;
+    }
+    
+    try {
+      const decrypted =
+        CryptoManager.decrypt(
+          payloadData.encrypted,
+          payloadData.iv,
+          payloadData.tag,
+          ratchet.messageKey.toString("base64")
+        );
+
+      console.log();
+      console.log(
+        `[${msg.from}] ${decrypted}`
+      );
+    } catch (err) {
+      console.error("Failed to decrypt current message:", err);
+      console.error("Current Key (base64):", ratchet.messageKey.toString("base64"));
+      console.error("Payload IV:", payloadData.iv);
+      console.error("Payload Tag:", payloadData.tag);
+      console.error("Payload Encrypted Length:", payloadData.encrypted?.length);
+    }
+
+    ReplayProtection.mark(
+      msg.from,
+      msg.messageNumber
+    );
+
     rl.prompt();
   }
 });
@@ -254,29 +602,88 @@ rl.prompt();
 
 rl.on("line", (line) => {
 
-  if (!rootKey) {
-
-    console.log(
-      "session not established"
+  // 修改: 如果会话未建立，存储消息并请求 PreKeyBundle
+  if (!chainKey) {
+    pendingMessage = line;
+    
+    ws.send(
+      JSON.stringify({
+        type: "getPreKeyBundle",
+        target: targetId,
+        targetDeviceId
+      })
     );
-
+    
+    console.log("Creating session...");
     rl.prompt();
-
     return;
   }
+
+  const dhStep =
+    DHRatchetManager
+      .ratchetStep(
+
+        ratchetKey,
+
+        ratchetKey.getPublicKey(),
+
+        chainKey
+      );
+
+  chainKey =
+    Buffer.from(
+      dhStep.nextRootKey
+    );
+
+  SessionStore.save(
+    userId,
+    targetId,
+    {
+      chainKey:
+        chainKey.toString(
+          "base64"
+        )
+    }
+  );
+
+  const ratchet =
+    RatchetManager.kdfChain(
+      chainKey
+    );
+
+  chainKey =
+    ratchet.nextChainKey;
+
+  SessionStore.save(
+    userId,
+    targetId,
+    {
+      chainKey:
+        chainKey.toString(
+          "base64"
+        )
+    }
+  );
 
   const encrypted =
     CryptoManager.encrypt(
       line,
-      rootKey
+      ratchet.messageKey
+        .toString("base64")
     );
 
   ws.send(
     JSON.stringify({
       type: "message",
       from: userId,
+      fromDeviceId: deviceId,
       target: targetId,
-      payload: encrypted
+      targetDeviceId,
+      messageNumber:
+        sendCounter++,
+      payload: encrypted,
+      dhPublicKey:
+        dhStep.publicKey
     })
   );
 

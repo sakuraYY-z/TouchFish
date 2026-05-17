@@ -12,7 +12,11 @@ console.log(
 );
 
 const clients =
-  new Map<string, WebSocket>();
+  new Map<
+    string,
+    Map<string, WebSocket>
+  >();
+
 const identities =
   new Map<string, string>();
 
@@ -36,10 +40,27 @@ wss.on("connection", (ws) => {
     // 用户登录
     if (message.type === "login") {
 
-      clients.set(
-        message.userId,
-        ws
-      );
+      const userId = message.userId;
+      const deviceId = message.deviceId || "default_device"; // 兼容未传deviceId的情况
+
+      if (
+        !clients.has(
+          userId
+        )
+      ) {
+
+        clients.set(
+          userId,
+          new Map()
+        );
+      }
+
+      clients
+        .get(userId)!
+        .set(
+          deviceId,
+          ws
+        );
 
       identities.set(
         message.userId,
@@ -47,7 +68,7 @@ wss.on("connection", (ws) => {
       );
 
       console.log(
-        `${message.userId} online`
+        `${message.userId} (${deviceId}) online`
       );
 
       return;
@@ -118,28 +139,21 @@ wss.on("connection", (ws) => {
       "x3dh-init"
     ) {
 
-      const target =
-        clients.get(
-          message.target
-        );
-
-      if (target) {
-
-        target.send(
-          JSON.stringify({
-            type:
-              "x3dh-init",
-
-            from:
-              message.from,
-
-            ephemeralPublic:
-              message.ephemeralPublic,
-
-            identityKey:
-              message.identityKey
-          })
-        );
+      const targetDevices = clients.get(message.target);
+      if (targetDevices) {
+        const payload = JSON.stringify({
+          type: "x3dh-init",
+          from: message.from,
+          ephemeralPublic: message.ephemeralPublic,
+          identityKey: message.identityKey
+        });
+        
+        // 广播给该用户的所有设备
+        targetDevices.forEach((deviceWs) => {
+          if (deviceWs.readyState === WebSocket.OPEN) {
+            deviceWs.send(payload);
+          }
+        });
       }
 
       return;
@@ -148,26 +162,34 @@ wss.on("connection", (ws) => {
     // 消息转发
     if (message.type === "message") {
       
+      const targetDevices = clients.get(message.target);
+      if (targetDevices) {
 
-      const target =
-        clients.get(message.target);
+        for (
+          const ws of
+          targetDevices.values()
+        ) {
 
-      if (target) {
+          ws.send(
+            JSON.stringify({
+              type: "message",
 
-        target.send(
-          JSON.stringify({
-            type: "message",
-            from: message.from,
-            payload: message.payload
-          })
-        );
+              from:
+                message.from,
 
-        console.log(
-          `${message.from} -> ${message.target}`
-        );
+              payload:
+                message.payload,
+
+              messageNumber:
+                message.messageNumber,
+
+              dhPublicKey:
+                message.dhPublicKey
+            })
+          );
+        }
       }
       else {
-
         console.log(
           "target offline"
         );
@@ -177,5 +199,19 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log("client disconnected");
+    // 可选：在此处清理 clients map 中断开的连接
+    // 由于 ws 对象引用在 map 中，可以通过遍历查找并删除
+    for (const [userId, devices] of clients.entries()) {
+      for (const [deviceId, socket] of devices.entries()) {
+        if (socket === ws) {
+          devices.delete(deviceId);
+          console.log(`Removed device ${deviceId} for user ${userId}`);
+          if (devices.size === 0) {
+            clients.delete(userId);
+          }
+          return; // 找到并删除后退出
+        }
+      }
+    }
   });
 });

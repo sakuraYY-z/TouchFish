@@ -83,6 +83,10 @@ export class X3DHManager {
         Buffer.from(dh4)
       ]);
 
+    // 修复: 确保 rootKey 被正确转换为 base64 字符串
+    // 假设 rootKey 是 Uint8Array 或 Buffer
+    const rootKeyBase64 = Buffer.from(rootKey).toString("base64");
+
     return {
 
       ephemeralPublic:
@@ -95,7 +99,7 @@ export class X3DHManager {
           .toString("base64"),
 
       rootKey:
-        rootKey.toString("base64")
+        rootKeyBase64
     };
   }
 
@@ -151,8 +155,6 @@ export class X3DHManager {
         Buffer.from(dh4)
       ]);
 
-    return rootKey.toString(
-      "base64"
-    );
+    return Buffer.from(rootKey).toString("base64");
   }
 }
