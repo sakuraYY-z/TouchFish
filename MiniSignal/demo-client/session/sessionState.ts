@@ -1,16 +1,27 @@
 import crypto from "crypto";
 
 export interface MiniSessionState {
-  version: 2;
+  version: 3;
+
   localUserId: string;
   localDeviceId: string;
   remoteUserId: string;
   remoteDeviceId: string;
+
   rootKey: string;
+
   sendChainKey: string;
   recvChainKey: string;
+
   sendCounter: number;
   recvCounter: number;
+
+  localRatchetPrivateKey: string;
+  localRatchetPublicKey: string;
+
+  remoteRatchetPublicKey: string | null;
+
+  previousSendCounter: number;
 }
 
 export function pairRole(
@@ -21,6 +32,7 @@ export function pairRole(
 ): "low" | "high" {
   const local = `${localUserId}:${localDeviceId}`;
   const remote = `${remoteUserId}:${remoteDeviceId}`;
+
   return local < remote ? "low" : "high";
 }
 
@@ -60,5 +72,8 @@ export function nextMessageKey(chainKey: Buffer) {
     .update("message")
     .digest();
 
-  return { nextChainKey, messageKey };
+  return {
+    nextChainKey,
+    messageKey,
+  };
 }

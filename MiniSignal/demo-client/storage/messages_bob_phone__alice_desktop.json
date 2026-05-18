@@ -6,7 +6,47 @@
     "to": "alice",
     "toDeviceId": "desktop",
     "text": "hello alice 1",
-    "timestamp": 1779099133635,
+    "timestamp": 1779108042157,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "Bob 输入：hello alice 1",
+    "timestamp": 1779108368811,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "Bob 输入：hello alice 1",
+    "timestamp": 1779108368814,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "Bob 输入：hello alice 2",
+    "timestamp": 1779108386107,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "Bob 输入：hello alice 2",
+    "timestamp": 1779108386109,
     "messageNumber": 0
   }
 ]

@@ -1,5 +1,5 @@
 import WebSocket, { WebSocketServer } from "ws";
-import { RelayQueue, CipherMessage } from "./relay";
+import { CipherMessage, RelayQueue } from "./relay";
 import { UserRegistry } from "./users";
 
 interface PreKeyBundle {
@@ -111,6 +111,7 @@ wss.on("connection", (ws) => {
         targetDeviceId: String(message.targetDeviceId ?? "default"),
         ephemeralPublic: message.ephemeralPublic,
         identityKey: message.identityKey,
+        ratchetPublicKey: message.ratchetPublicKey ?? null,
       };
 
       if (target && target.ws.readyState === WebSocket.OPEN) {
@@ -131,6 +132,8 @@ wss.on("connection", (ws) => {
         messageNumber: Number(message.messageNumber),
         payload: message.payload,
         timestamp: Date.now(),
+        ratchetPublicKey: message.ratchetPublicKey ?? null,
+        previousSendCounter: Number(message.previousSendCounter ?? 0),
       };
 
       const status = relay.deliverOrQueue(users, cipherMessage);

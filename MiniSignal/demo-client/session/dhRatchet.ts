@@ -10,53 +10,35 @@ import {
 } from "./session";
 
 export class DHRatchetManager {
-
   static ratchetStep(
-
-    localRatchetKey:
-      PrivateKey,
-
-    remoteRatchetKey:
-      PublicKey,
-
-    currentRootKey:
-      Buffer
+    localRatchetKey: PrivateKey,
+    remoteRatchetKey: PublicKey,
+    currentRootKey: Buffer
   ) {
+    const dh = SessionManager.createSharedSecret(
+      localRatchetKey,
+      remoteRatchetKey
+    );
 
-    const dh =
-      SessionManager
-        .createSharedSecret(
-          localRatchetKey,
-          remoteRatchetKey
-        );
+    const output = crypto.hkdfSync(
+      "sha256",
+      Buffer.from(dh),
+      currentRootKey,
+      Buffer.from("DHRatchet"),
+      64
+    );
 
-    const nextRootKey =
-      crypto.hkdfSync(
-        "sha256",
+    const buffer = Buffer.from(output);
 
-        Buffer.from(dh),
-
-        currentRootKey,
-
-        Buffer.from(
-          "DHRatchet"
-        ),
-
-        32
-      );
+    const nextRootKey = buffer.subarray(0, 32);
+    const chainKey = buffer.subarray(32, 64);
 
     return {
-
       nextRootKey,
-
-      publicKey:
-        Buffer
-          .from(
-            localRatchetKey
-              .getPublicKey()
-              .serialize()
-          )
-          .toString("base64")
+      chainKey,
+      publicKey: Buffer.from(
+        localRatchetKey.getPublicKey().serialize()
+      ).toString("base64")
     };
   }
 }

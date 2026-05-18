@@ -1,12 +1,16 @@
 {
-  "version": 2,
+  "version": 3,
   "localUserId": "alice",
   "localDeviceId": "desktop",
   "remoteUserId": "bob",
   "remoteDeviceId": "phone",
-  "rootKey": "1ow2Xm5OQpfIOOMTAOTcSG6E9Rnt+HFLOQaZYtHhoZc=",
-  "sendChainKey": "dY40gcLL9iSnd8uecZwO1hxWII2RqMKJojvTIuLkUHI=",
-  "recvChainKey": "14lwe9viGKKM1u72A4c1Gf31blo4MZC68lySyixcEko=",
-  "sendCounter": 1,
-  "recvCounter": 0
+  "rootKey": "70crwsf5qeFraJt8nm2t00UVJwz4x1aVWkX+4JCVQ7I=",
+  "sendChainKey": "skx9k+yPdhTC8vX2JTNbaxgXAdx0G5EiOo3qnaBd41M=",
+  "recvChainKey": "JCASwMxjjxK4oITAYIXIdkuNb8u5DQKbO8wlgymZIBc=",
+  "sendCounter": 0,
+  "recvCounter": 1,
+  "localRatchetPrivateKey": "2BQ05Y7j/AYrAywGt7lqepambT2OKqZUTgckt1owYGg=",
+  "localRatchetPublicKey": "BWfoOaBsIcHJ4P0Z3u1JDcmQYPiuuZ7IepBg6mstjuR/",
+  "remoteRatchetPublicKey": "BRvB5DZP19lE+BRfqv/C0VIDAWnwlQOl8puKqfZ2yC9F",
+  "previousSendCounter": 1
 }

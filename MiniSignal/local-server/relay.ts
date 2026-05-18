@@ -14,6 +14,8 @@ export interface CipherMessage {
     tag: string;
   };
   timestamp: number;
+  ratchetPublicKey?: string | null;
+  previousSendCounter?: number;
 }
 
 export class RelayQueue {

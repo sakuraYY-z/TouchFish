@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { MiniSessionState } from "./sessionState";
 
-const SESSION_VERSION = 2;
+const SESSION_VERSION = 3;
 
 export class SessionStore {
   static storageDir() {
