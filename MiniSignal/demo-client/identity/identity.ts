@@ -1,70 +1,39 @@
 import fs from "fs";
 import path from "path";
-
-import {
-  PrivateKey
-} from "@signalapp/libsignal-client";
+import { PrivateKey } from "@signalapp/libsignal-client";
 
 export class IdentityManager {
-
   private identityKey: PrivateKey;
 
-  constructor(userId: string) {
+  constructor(userId: string, deviceId: string) {
+    const dir = path.join(__dirname, "..", "storage");
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
 
-    const storagePath =
-      path.join(
-        __dirname,
-        "..",
-        "storage",
-        `${userId}.json`
-      );
+    const storagePath = path.join(dir, `${userId}_${deviceId}_identity.json`);
 
-    // 已存在身份
     if (fs.existsSync(storagePath)) {
-
-      const data =
-        JSON.parse(
-          fs.readFileSync(
-            storagePath,
-            "utf8"
-          )
-        );
-
-      this.identityKey =
-        PrivateKey.deserialize(
-          Buffer.from(
-            data.privateKey,
-            "base64"
-          )
-        );
-
-      console.log(
-        `${userId} identity loaded`
-      );
+      const data = JSON.parse(fs.readFileSync(storagePath, "utf8"));
+      this.identityKey = PrivateKey.deserialize(Buffer.from(data.privateKey, "base64"));
+      console.log(`${userId}/${deviceId} identity loaded`);
+      return;
     }
 
-    // 首次生成身份
-    else {
+    this.identityKey = PrivateKey.generate();
 
-      this.identityKey =
-        PrivateKey.generate();
+    fs.writeFileSync(
+      storagePath,
+      JSON.stringify(
+        {
+          privateKey: Buffer.from(this.identityKey.serialize()).toString("base64"),
+        },
+        null,
+        2
+      )
+    );
 
-      fs.writeFileSync(
-        storagePath,
-        JSON.stringify({
-          privateKey:
-            Buffer
-              .from(
-                this.identityKey.serialize()
-              )
-              .toString("base64")
-        })
-      );
-
-      console.log(
-        `${userId} identity created`
-      );
-    }
+    console.log(`${userId}/${deviceId} identity created`);
   }
 
   getPrivateKey() {
@@ -76,11 +45,6 @@ export class IdentityManager {
   }
 
   getPublicKeyBase64() {
-
-    return Buffer
-      .from(
-        this.getPublicKey().serialize()
-      )
-      .toString("base64");
+    return Buffer.from(this.getPublicKey().serialize()).toString("base64");
   }
 }

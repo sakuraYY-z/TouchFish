@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "localUserId": "bob",
+  "localDeviceId": "phone",
+  "remoteUserId": "alice",
+  "remoteDeviceId": "desktop",
+  "rootKey": "1ow2Xm5OQpfIOOMTAOTcSG6E9Rnt+HFLOQaZYtHhoZc=",
+  "sendChainKey": "14lwe9viGKKM1u72A4c1Gf31blo4MZC68lySyixcEko=",
+  "recvChainKey": "dY40gcLL9iSnd8uecZwO1hxWII2RqMKJojvTIuLkUHI=",
+  "sendCounter": 0,
+  "recvCounter": 1
+}

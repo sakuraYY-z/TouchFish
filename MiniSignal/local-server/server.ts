@@ -1,217 +1,165 @@
-import WebSocket, {
-  WebSocketServer
-} from "ws";
+import WebSocket, { WebSocketServer } from "ws";
+import { RelayQueue, CipherMessage } from "./relay";
+import { UserRegistry } from "./users";
 
-const wss =
-  new WebSocketServer({
-    port: 8080
-  });
+interface PreKeyBundle {
+  identityKey: string;
+  signedPreKey: string;
+  oneTimePreKey: string;
+}
 
-console.log(
-  "MiniSignal Server Running: ws://localhost:8080"
-);
+const wss = new WebSocketServer({ port: 8080 });
+const users = new UserRegistry();
+const relay = new RelayQueue();
 
-const clients =
-  new Map<
-    string,
-    Map<string, WebSocket>
-  >();
+const bundles = new Map<string, PreKeyBundle>();
 
-const identities =
-  new Map<string, string>();
+function deviceKey(userId: string, deviceId: string) {
+  return `${userId}:${deviceId}`;
+}
 
-const preKeyBundles =
-  new Map<string, any>();
+function send(ws: WebSocket, payload: unknown) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
+  }
+}
+
+console.log("MiniSignal Server Running: ws://localhost:8080");
 
 wss.on("connection", (ws) => {
-
   console.log("client connected");
 
   ws.on("message", (data) => {
+    let message: any;
 
-    const message =
-      JSON.parse(data.toString());
+    try {
+      message = JSON.parse(data.toString());
+    } catch {
+      send(ws, { type: "error", error: "invalid json" });
+      return;
+    }
 
-    console.log(
-      "RECV:",
-      message
-    );
+    console.log("RECV:", message.type, message.from ?? message.userId ?? "");
 
-    // 用户登录
     if (message.type === "login") {
+      const userId = String(message.userId);
+      const deviceId = String(message.deviceId ?? "default");
 
-      const userId = message.userId;
-      const deviceId = message.deviceId || "default_device"; // 兼容未传deviceId的情况
+      users.login(userId, deviceId, ws, message.publicKey);
 
-      if (
-        !clients.has(
-          userId
-        )
-      ) {
+      send(ws, {
+        type: "login-ok",
+        userId,
+        deviceId,
+      });
 
-        clients.set(
-          userId,
-          new Map()
-        );
+      const offline = relay.pull(userId, deviceId);
+      for (const item of offline) {
+        send(ws, item);
       }
 
-      clients
-        .get(userId)!
-        .set(
-          deviceId,
-          ws
-        );
-
-      identities.set(
-        message.userId,
-        message.publicKey
-      );
-
-      console.log(
-        `${message.userId} (${deviceId}) online`
-      );
-
+      console.log(`${userId} (${deviceId}) online, offline=${offline.length}`);
       return;
     }
 
-    // 处理上传预密钥包请求
     if (message.type === "uploadPreKeyBundle") {
+      const userId = String(message.userId);
+      const deviceId = String(message.deviceId ?? "default");
 
-      preKeyBundles.set(
-        message.userId,
-        message.bundle
-      );
+      if (!message.bundle) {
+        send(ws, { type: "error", error: "missing bundle" });
+        return;
+      }
 
-      console.log(
-        `${message.userId} uploaded bundle`
-      );
+      bundles.set(deviceKey(userId, deviceId), message.bundle);
 
+      send(ws, {
+        type: "uploadPreKeyBundle-ok",
+        userId,
+        deviceId,
+      });
+
+      console.log(`${userId} (${deviceId}) uploaded bundle`);
       return;
     }
 
-    // 处理获取公钥请求
-    if (message.type === "getPublicKey") {
-
-      const publicKey =
-        identities.get(
-          message.target
-        );
-
-      console.log(
-        "GET PUBLIC KEY:",
-        message.target,
-        publicKey
-      );
-
-      ws.send(
-        JSON.stringify({
-          type: "publicKey",
-          target: message.target,
-          publicKey
-        })
-      );
-
-      return;
-    }
-
-    // 处理获取预密钥包请求
     if (message.type === "getPreKeyBundle") {
+      const target = String(message.target);
+      const targetDeviceId = String(message.targetDeviceId ?? "default");
+      const bundle = bundles.get(deviceKey(target, targetDeviceId));
 
-      const bundle =
-        preKeyBundles.get(
-          message.target
-        );
+      send(ws, {
+        type: "preKeyBundle",
+        target,
+        targetDeviceId,
+        bundle: bundle ?? null,
+      });
+      return;
+    }
 
-      ws.send(
-        JSON.stringify({
-          type: "preKeyBundle",
-          target: message.target,
-          bundle
-        })
+    if (message.type === "x3dh-init") {
+      const target = users.getDevice(
+        String(message.target),
+        String(message.targetDeviceId ?? "default")
       );
 
-      return;
-    }
+      const payload = {
+        type: "x3dh-init",
+        from: String(message.from),
+        fromDeviceId: String(message.fromDeviceId ?? "default"),
+        target: String(message.target),
+        targetDeviceId: String(message.targetDeviceId ?? "default"),
+        ephemeralPublic: message.ephemeralPublic,
+        identityKey: message.identityKey,
+      };
 
-    // 处理 X3DH 初始化请求
-    if (
-      message.type ===
-      "x3dh-init"
-    ) {
-
-      const targetDevices = clients.get(message.target);
-      if (targetDevices) {
-        const payload = JSON.stringify({
-          type: "x3dh-init",
-          from: message.from,
-          ephemeralPublic: message.ephemeralPublic,
-          identityKey: message.identityKey
-        });
-        
-        // 广播给该用户的所有设备
-        targetDevices.forEach((deviceWs) => {
-          if (deviceWs.readyState === WebSocket.OPEN) {
-            deviceWs.send(payload);
-          }
-        });
+      if (target && target.ws.readyState === WebSocket.OPEN) {
+        send(target.ws, payload);
+      } else {
+        send(ws, { type: "error", error: "target offline for x3dh-init" });
       }
-
       return;
     }
 
-    // 消息转发
     if (message.type === "message") {
-      
-      const targetDevices = clients.get(message.target);
-      if (targetDevices) {
+      const cipherMessage: CipherMessage = {
+        type: "message",
+        from: String(message.from),
+        fromDeviceId: String(message.fromDeviceId ?? "default"),
+        target: String(message.target),
+        targetDeviceId: String(message.targetDeviceId ?? "default"),
+        messageNumber: Number(message.messageNumber),
+        payload: message.payload,
+        timestamp: Date.now(),
+      };
 
-        for (
-          const ws of
-          targetDevices.values()
-        ) {
+      const status = relay.deliverOrQueue(users, cipherMessage);
 
-          ws.send(
-            JSON.stringify({
-              type: "message",
-
-              from:
-                message.from,
-
-              payload:
-                message.payload,
-
-              messageNumber:
-                message.messageNumber,
-
-              dhPublicKey:
-                message.dhPublicKey
-            })
-          );
-        }
-      }
-      else {
-        console.log(
-          "target offline"
-        );
-      }
+      send(ws, {
+        type: "message-status",
+        messageNumber: cipherMessage.messageNumber,
+        status,
+      });
+      return;
     }
+
+    if (message.type === "pull") {
+      const userId = String(message.userId);
+      const deviceId = String(message.deviceId ?? "default");
+      const messages = relay.pull(userId, deviceId);
+      send(ws, { type: "pull-result", messages });
+      return;
+    }
+
+    send(ws, { type: "error", error: `unknown type: ${message.type}` });
   });
 
   ws.on("close", () => {
-    console.log("client disconnected");
-    // 可选：在此处清理 clients map 中断开的连接
-    // 由于 ws 对象引用在 map 中，可以通过遍历查找并删除
-    for (const [userId, devices] of clients.entries()) {
-      for (const [deviceId, socket] of devices.entries()) {
-        if (socket === ws) {
-          devices.delete(deviceId);
-          console.log(`Removed device ${deviceId} for user ${userId}`);
-          if (devices.size === 0) {
-            clients.delete(userId);
-          }
-          return; // 找到并删除后退出
-        }
-      }
+    const removed = users.removeSocket(ws);
+    if (removed) {
+      console.log(`client disconnected: ${removed.userId} (${removed.deviceId})`);
+    } else {
+      console.log("client disconnected");
     }
   });
 });

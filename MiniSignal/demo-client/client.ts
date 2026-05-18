@@ -1,676 +1,138 @@
+import { PublicKey } from "@signalapp/libsignal-client";
 import readline from "readline";
 import WebSocket from "ws";
-
 import { CryptoManager } from "./crypto/crypto";
 import { IdentityManager } from "./identity/identity";
+import { MessageStore } from "./message/messageStore";
 import { PreKeyManager } from "./prekey/prekey";
-import { DHRatchetManager } from "./session/dhRatchet";
-import { RatchetManager } from "./session/ratchet";
-import { ReplayProtection } from "./session/replayProtection";
+import {
+  MiniSessionState,
+  deriveDirectionalChains,
+  nextMessageKey,
+} from "./session/sessionState";
 import { SessionStore } from "./session/sessionStore";
-import { SkippedKeyStore } from "./session/skippedKeys";
 import { X3DHManager } from "./session/x3dh";
 
-const userId =
-  process.argv[2];
-
-const deviceId =
-  process.argv[3];
-
-const targetId =
-  process.argv[4];
-
-const targetDeviceId =
-  process.argv[5];
+const userId = process.argv[2];
+const deviceId = process.argv[3];
+const targetId = process.argv[4];
+const targetDeviceId = process.argv[5];
 
 if (!userId || !deviceId || !targetId || !targetDeviceId) {
-
-  console.log(
-    "usage: npx ts-node client.ts alice desktop bob phone"
-  );
-
+  console.log("usage: npx ts-node client.ts alice desktop bob phone");
   process.exit(0);
 }
 
-const identity =
-  new IdentityManager(userId);
+const identity = new IdentityManager(userId, deviceId);
+const preKeys = new PreKeyManager(identity.getPrivateKey());
 
-const preKeys =
-  new PreKeyManager(
-    identity.getPrivateKey()
-  );
+let session: MiniSessionState | null = SessionStore.load(
+  userId,
+  deviceId,
+  targetId,
+  targetDeviceId
+);
 
-let chainKey: Buffer;
-
-let sendCounter = 0;
-
-let receiveCounter = 0;
-
-// 新增: 用于存储待发送的消息
 let pendingMessage: string | null = null;
 
-const savedSession =
-  SessionStore.load(
-    userId,
-    targetId
-  );
-
-if (savedSession) {
-
-  if (
-    savedSession.version !== 1
-  ) {
-
-    console.log(
-      "session version mismatch"
-    );
-
-    process.exit(1);
+function saveSession() {
+  if (session) {
+    SessionStore.save(session);
   }
-
-  chainKey =
-    Buffer.from(
-      savedSession.chainKey,
-      "base64"
-    );
-
-  console.log(
-    "session restored"
-  );
 }
 
-let ratchetKey =
-  require(
-    "@signalapp/libsignal-client"
-  ).PrivateKey.generate();
+function createSessionFromRoot(rootKeyBase64: string) {
+  const rootKey = Buffer.from(rootKeyBase64, "base64");
 
-const ws =
-  new WebSocket(
-    "ws://localhost:8080"
+  const chains = deriveDirectionalChains(
+    rootKey,
+    userId,
+    deviceId,
+    targetId,
+    targetDeviceId
   );
 
-ws.on("open", () => {
+  session = {
+    version: 2,
+    localUserId: userId,
+    localDeviceId: deviceId,
+    remoteUserId: targetId,
+    remoteDeviceId: targetDeviceId,
+    rootKey: rootKey.toString("base64"),
+    sendChainKey: chains.sendChainKey.toString("base64"),
+    recvChainKey: chains.recvChainKey.toString("base64"),
+    sendCounter: 0,
+    recvCounter: 0,
+  };
 
-  console.log(
-    `${userId} connected`
-  );
+  saveSession();
+}
 
-  ws.send(
-    JSON.stringify({
-      type: "login",
-      userId,
-      deviceId,
-      publicKey:
-        identity.getPublicKeyBase64()
-    })
-  );
-
-  ws.send(
-    JSON.stringify({
-      type:
-        "uploadPreKeyBundle",
-
-      userId,
-
-      deviceId,
-
-      bundle:
-        preKeys.getBundle()
-    })
-  );
-
-});
-
-ws.on("message", (data) => {
-
-  const msg =
-    JSON.parse(data.toString());
-
-  if (
-    msg.type ===
-    "preKeyBundle"
-  ) {
-
-    if (!msg.bundle) {
-
-      console.log(
-        "bundle not available"
-      );
-
-        return;
-    }
-
-    const {
-      PublicKey
-    } = require(
-      "@signalapp/libsignal-client"
-    );
-
-    const remoteIdentity =
-      PublicKey.deserialize(
-        Buffer.from(
-          msg.bundle.identityKey,
-          "base64"
-        )
-      );
-
-    const remoteSignedPreKey =
-      PublicKey.deserialize(
-        Buffer.from(
-          msg.bundle.signedPreKey,
-          "base64"
-        )
-      );
-
-    const remoteOneTimePreKey =
-      PublicKey.deserialize(
-        Buffer.from(
-          msg.bundle.oneTimePreKey,
-          "base64"
-        )
-      );
-
-    const result =
-      X3DHManager.initiator(
-
-        identity.getPrivateKey(),
-
-        remoteIdentity,
-
-        remoteSignedPreKey,
-
-        remoteOneTimePreKey
-      );
-
-    // 修复: Buffer.from 默认使用 utf8 编码，必须指定 base64 以正确解码密钥
-    chainKey =
-      Buffer.from(result.rootKey, 'base64');
-
-    SessionStore.save(
-      userId,
-      targetId,
-      {
-        chainKey:
-          chainKey.toString(
-            "base64"
-          )
-      }
-    );
-
-    console.log(
-      "X3DH initiator session established"
-    );
-
-    // 把 ephemeralPublic 发给对方
-    ws.send(
-      JSON.stringify({
-
-        type:
-          "x3dh-init",
-
-        from:
-          userId,
-
-        fromDeviceId:
-          deviceId,
-
-        target:
-          targetId,
-
-        targetDeviceId,
-
-        ephemeralPublic:
-          result.ephemeralPublic,
-
-        identityKey:
-          identity
-            .getPublicKeyBase64()
-      })
-    );
-
-    // 新增: 如果有待发送的消息，立即发送
-    if (pendingMessage) {
-      console.log("Sending pending message...");
-      
-      // 复制 rl.on('line') 中的加密逻辑
-      // 注意：这里需要生成一个新的 Ephemeral Key 用于第一条消息的 DH Ratchet
-      // 原有的 ratchetKey 是在文件顶部生成的，可能需要重新生成或复用
-      // 为了简化，我们复用现有的 ratchetKey 逻辑，但需要注意状态同步
-      
-      // 1. 执行 DH Ratchet Step (生成新的 DH 公钥和更新 Root Key/Chain Key)
-      // 这里的逻辑与 rl.on('line') 一致
-      const dhStep =
-        DHRatchetManager
-          .ratchetStep(
-
-            ratchetKey,
-
-            ratchetKey.getPublicKey(),
-
-            chainKey
-          );
-
-      chainKey =
-        Buffer.from(
-          dhStep.nextRootKey
-        );
-
-      SessionStore.save(
-        userId,
-        targetId,
-        {
-          chainKey:
-            chainKey.toString(
-              "base64"
-            )
-        }
-      );
-
-      const ratchet =
-        RatchetManager.kdfChain(
-          chainKey
-        );
-
-      chainKey =
-        ratchet.nextChainKey;
-
-      SessionStore.save(
-        userId,
-        targetId,
-        {
-          chainKey:
-            chainKey.toString(
-              "base64"
-            )
-        }
-      );
-
-      const encrypted =
-        CryptoManager.encrypt(
-          pendingMessage,
-          ratchet.messageKey
-            .toString("base64")
-        );
-
-      ws.send(
-        JSON.stringify({
-          type: "message",
-          from: userId,
-          fromDeviceId: deviceId,
-          target: targetId,
-          targetDeviceId,
-          messageNumber:
-            sendCounter++,
-          payload: encrypted,
-          dhPublicKey:
-            dhStep.publicKey
-        })
-      );
-
-      pendingMessage = null;
-      console.log("Pending message sent.");
-    }
-
-    return;
+function encryptForSend(plaintext: string) {
+  if (!session) {
+    throw new Error("session not established");
   }
 
-  if (
-    msg.type ===
-    "x3dh-init"
-  ) {
+  const chain = Buffer.from(session.sendChainKey, "base64");
+  const { nextChainKey, messageKey } = nextMessageKey(chain);
 
-    const {
-      PublicKey
-    } = require(
-      "@signalapp/libsignal-client"
-    );
+  const encrypted = CryptoManager.encrypt(
+    plaintext,
+    messageKey.toString("base64")
+  );
 
-    const remoteEphemeral =
-      PublicKey.deserialize(
-        Buffer.from(
-          msg.ephemeralPublic,
-          "base64"
-        )
-      );
+  const messageNumber = session.sendCounter;
 
-    const remoteIdentity =
-      PublicKey.deserialize(
-        Buffer.from(
-          msg.identityKey,
-          "base64"
-        )
-      );
+  session.sendCounter += 1;
+  session.sendChainKey = nextChainKey.toString("base64");
+  saveSession();
 
-    chainKey =
-      Buffer.from(
-        X3DHManager.responder(
+  return { encrypted, messageNumber };
+}
 
-          identity.getPrivateKey(),
-
-          preKeys.getSignedPreKeyPrivate(),
-
-          preKeys.getOneTimePreKeyPrivate(),
-
-          remoteEphemeral,
-
-          remoteIdentity
-        ),
-        "base64"
-      );
-
-    SessionStore.save(
-      userId,
-      targetId,
-      {
-        chainKey:
-          chainKey.toString(
-            "base64"
-          )
-      }
-    );
-
-    console.log(
-      "X3DH responder session established"
-    );
-
-    return;
+function decryptIncoming(messageNumber: number, payload: any) {
+  if (!session) {
+    throw new Error("session not established");
   }
 
-  if (msg.type === "message") {
-
-    if (
-      ReplayProtection.seen(
-        msg.from,
-        msg.messageNumber
-      )
-    ) {
-
-      console.log(
-        "replay attack detected"
-      );
-
-      return;
-    }
-
-    const incoming =
-      msg.messageNumber;
-
-    // 检查是否是旧消息（跳过密钥）
-    if (
-      SkippedKeyStore.has(
-        incoming
-      )
-    ) {
-
-      const skippedKey =
-        SkippedKeyStore.get(
-          incoming
-        );
-
-      // 解析 payload 获取加密组件
-      let payloadData: any = msg.payload;
-      if (typeof msg.payload === 'string') {
-        try {
-          payloadData = JSON.parse(msg.payload);
-        } catch (e) {
-          console.error("Failed to parse payload as JSON for skipped key");
-          return;
-        }
-      }
-      
-      // 确保字段存在 (注意发送端使用的是 encrypted)
-      if (!payloadData.encrypted || !payloadData.iv || !payloadData.tag) {
-         console.error("Missing fields in payload for skipped key decryption", payloadData);
-         return;
-      }
-
-      try {
-        const decrypted =
-          CryptoManager.decrypt(
-            payloadData.encrypted,
-            payloadData.iv,
-            payloadData.tag,
-            skippedKey!
-          );
-
-        console.log(
-          `\n${msg.from}:`,
-          decrypted
-        );
-      } catch (err) {
-        console.error("Failed to decrypt skipped message:", err);
-        console.error("Skipped Key (base64):", skippedKey);
-        console.error("Payload IV:", payloadData.iv);
-        console.error("Payload Tag:", payloadData.tag);
-        console.error("Payload Encrypted Length:", payloadData.encrypted?.length);
-      }
-
-      ReplayProtection.mark(
-        msg.from,
-        msg.messageNumber
-      );
-
-      return;
-    }
-
-    while (
-      receiveCounter <
-      incoming
-    ) {
-
-      const ratchet =
-        RatchetManager
-          .kdfChain(
-            chainKey
-          );
-
-      chainKey =
-        ratchet.nextChainKey;
-
-      SkippedKeyStore.save(
-
-        receiveCounter,
-
-        ratchet.messageKey
-          .toString("base64")
-      );
-
-      receiveCounter++;
-    }
-
-    if (msg.dhPublicKey) {
-
-      const {
-        PublicKey
-      } = require(
-        "@signalapp/libsignal-client"
-      );
-
-      const remoteRatchet =
-        PublicKey.deserialize(
-          Buffer.from(
-            msg.dhPublicKey,
-            "base64"
-          )
-        );
-
-      const dhStep =
-        DHRatchetManager
-          .ratchetStep(
-
-            ratchetKey,
-
-            remoteRatchet,
-
-            chainKey
-          );
-
-      chainKey =
-        Buffer.from(
-          dhStep.nextRootKey
-        );
-
-      SessionStore.save(
-        userId,
-        targetId,
-        {
-          chainKey:
-            chainKey.toString(
-              "base64"
-            )
-        }
-      );
-    }
-
-    const ratchet =
-      RatchetManager.kdfChain(
-        chainKey
-      );
-
-    receiveCounter++;
-
-    chainKey =
-      ratchet.nextChainKey;
-
-    SessionStore.save(
-      userId,
-      targetId,
-      {
-        chainKey:
-          chainKey.toString(
-            "base64"
-          )
-      }
+  if (messageNumber !== session.recvCounter) {
+    throw new Error(
+      `message order mismatch: expected ${session.recvCounter}, got ${messageNumber}`
     );
-
-    // 解析 payload 获取加密组件
-    let payloadData: any = msg.payload;
-    if (typeof msg.payload === 'string') {
-      try {
-        payloadData = JSON.parse(msg.payload);
-      } catch (e) {
-        console.error("Failed to parse payload as JSON for current message");
-        return;
-      }
-    }
-
-    // 确保字段存在 (注意发送端使用的是 encrypted)
-    if (!payloadData.encrypted || !payloadData.iv || !payloadData.tag) {
-       console.error("Missing fields in payload for current message decryption", payloadData);
-       return;
-    }
-    
-    try {
-      const decrypted =
-        CryptoManager.decrypt(
-          payloadData.encrypted,
-          payloadData.iv,
-          payloadData.tag,
-          ratchet.messageKey.toString("base64")
-        );
-
-      console.log();
-      console.log(
-        `[${msg.from}] ${decrypted}`
-      );
-    } catch (err) {
-      console.error("Failed to decrypt current message:", err);
-      console.error("Current Key (base64):", ratchet.messageKey.toString("base64"));
-      console.error("Payload IV:", payloadData.iv);
-      console.error("Payload Tag:", payloadData.tag);
-      console.error("Payload Encrypted Length:", payloadData.encrypted?.length);
-    }
-
-    ReplayProtection.mark(
-      msg.from,
-      msg.messageNumber
-    );
-
-    rl.prompt();
   }
-});
 
-const rl =
-  readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
+  const chain = Buffer.from(session.recvChainKey, "base64");
+  const { nextChainKey, messageKey } = nextMessageKey(chain);
 
-rl.setPrompt("> ");
+  const plaintext = CryptoManager.decrypt(
+    payload.encrypted,
+    payload.iv,
+    payload.tag,
+    messageKey.toString("base64")
+  );
 
-rl.prompt();
+  session.recvCounter += 1;
+  session.recvChainKey = nextChainKey.toString("base64");
+  saveSession();
 
-rl.on("line", (line) => {
+  return plaintext;
+}
 
-  // 修改: 如果会话未建立，存储消息并请求 PreKeyBundle
-  if (!chainKey) {
+function sendChat(line: string) {
+  if (!session) {
     pendingMessage = line;
-    
     ws.send(
       JSON.stringify({
         type: "getPreKeyBundle",
         target: targetId,
-        targetDeviceId
+        targetDeviceId,
       })
     );
-    
-    console.log("Creating session...");
-    rl.prompt();
+    console.log("Creating X3DH session...");
     return;
   }
 
-  const dhStep =
-    DHRatchetManager
-      .ratchetStep(
-
-        ratchetKey,
-
-        ratchetKey.getPublicKey(),
-
-        chainKey
-      );
-
-  chainKey =
-    Buffer.from(
-      dhStep.nextRootKey
-    );
-
-  SessionStore.save(
-    userId,
-    targetId,
-    {
-      chainKey:
-        chainKey.toString(
-          "base64"
-        )
-    }
-  );
-
-  const ratchet =
-    RatchetManager.kdfChain(
-      chainKey
-    );
-
-  chainKey =
-    ratchet.nextChainKey;
-
-  SessionStore.save(
-    userId,
-    targetId,
-    {
-      chainKey:
-        chainKey.toString(
-          "base64"
-        )
-    }
-  );
-
-  const encrypted =
-    CryptoManager.encrypt(
-      line,
-      ratchet.messageKey
-        .toString("base64")
-    );
+  const { encrypted, messageNumber } = encryptForSend(line);
 
   ws.send(
     JSON.stringify({
@@ -679,13 +141,240 @@ rl.on("line", (line) => {
       fromDeviceId: deviceId,
       target: targetId,
       targetDeviceId,
-      messageNumber:
-        sendCounter++,
+      messageNumber,
       payload: encrypted,
-      dhPublicKey:
-        dhStep.publicKey
     })
   );
 
+  MessageStore.append(userId, deviceId, targetId, targetDeviceId, {
+  direction: "out",
+  from: userId,
+  fromDeviceId: deviceId,
+  to: targetId,
+  toDeviceId: targetDeviceId,
+  text: line,
+  timestamp: Date.now(),
+  messageNumber,
+});
+}
+
+function parsePublicKey(base64: string) {
+  return PublicKey.deserialize(Buffer.from(base64, "base64"));
+}
+
+const ws = new WebSocket("ws://localhost:8080");
+
+ws.on("open", () => {
+  console.log(`${userId}/${deviceId} connected`);
+
+  ws.send(
+    JSON.stringify({
+      type: "login",
+      userId,
+      deviceId,
+      publicKey: identity.getPublicKeyBase64(),
+    })
+  );
+
+  ws.send(
+    JSON.stringify({
+      type: "uploadPreKeyBundle",
+      userId,
+      deviceId,
+      bundle: preKeys.getBundle(),
+    })
+  );
+
+  if (session) {
+    console.log("session restored");
+  }
+});
+
+ws.on("message", (data) => {
+  const msg = JSON.parse(data.toString());
+
+  if (msg.type === "login-ok") {
+    return;
+  }
+
+  if (msg.type === "uploadPreKeyBundle-ok") {
+    return;
+  }
+
+  if (msg.type === "message-status") {
+    console.log(`message ${msg.messageNumber}: ${msg.status}`);
+    rl.prompt();
+    return;
+  }
+
+  if (msg.type === "error") {
+    console.log("server error:", msg.error);
+    rl.prompt();
+    return;
+  }
+
+  if (msg.type === "preKeyBundle") {
+    if (!msg.bundle) {
+      console.log(`bundle not available: ${targetId}/${targetDeviceId}`);
+      rl.prompt();
+      return;
+    }
+
+    const remoteIdentity = parsePublicKey(msg.bundle.identityKey);
+    const remoteSignedPreKey = parsePublicKey(msg.bundle.signedPreKey);
+    const remoteOneTimePreKey = parsePublicKey(msg.bundle.oneTimePreKey);
+
+    const result = X3DHManager.initiator(
+      identity.getPrivateKey(),
+      remoteIdentity,
+      remoteSignedPreKey,
+      remoteOneTimePreKey
+    );
+
+    createSessionFromRoot(result.rootKey);
+
+    console.log("X3DH initiator session established");
+
+    ws.send(
+      JSON.stringify({
+        type: "x3dh-init",
+        from: userId,
+        fromDeviceId: deviceId,
+        target: targetId,
+        targetDeviceId,
+        ephemeralPublic: result.ephemeralPublic,
+        identityKey: identity.getPublicKeyBase64(),
+      })
+    );
+
+    if (pendingMessage) {
+      const text = pendingMessage;
+      pendingMessage = null;
+      sendChat(text);
+    }
+
+    rl.prompt();
+    return;
+  }
+
+  if (msg.type === "x3dh-init") {
+    const remoteEphemeral = parsePublicKey(msg.ephemeralPublic);
+    const remoteIdentity = parsePublicKey(msg.identityKey);
+
+    const rootKey = X3DHManager.responder(
+      identity.getPrivateKey(),
+      preKeys.getSignedPreKeyPrivate(),
+      preKeys.getOneTimePreKeyPrivate(),
+      remoteEphemeral,
+      remoteIdentity
+    );
+
+    createSessionFromRoot(rootKey);
+
+    console.log("X3DH responder session established");
+    rl.prompt();
+    return;
+  }
+
+  if (msg.type === "message") {
+    try {
+      const plaintext = decryptIncoming(msg.messageNumber, msg.payload);
+      
+      MessageStore.append(targetId, targetDeviceId, userId, deviceId, {
+        direction: "in",
+        from: userId,
+        fromDeviceId: deviceId,
+        to: targetId,
+        toDeviceId: targetDeviceId,
+        text: plaintext,
+        timestamp: Date.now(),
+        messageNumber: msg.messageNumber,
+      });
+      console.log();
+      console.log(`[${msg.from}/${msg.fromDeviceId}] ${plaintext}`);
+    } catch (err) {
+      console.error("Failed to decrypt message:", err);
+      console.error("Tip: delete demo-client/storage/session_*.json on both clients and retry.");
+    }
+
+    rl.prompt();
+    return;
+  }
+
+  if (msg.type === "pull-result") {
+    for (const item of msg.messages ?? []) {
+      try {
+        const plaintext = decryptIncoming(item.messageNumber, item.payload);
+        
+        MessageStore.append(targetId, targetDeviceId, userId, deviceId, {
+          direction: "in",
+          from: userId,
+          fromDeviceId: deviceId,
+          to: targetId,
+          toDeviceId: targetDeviceId,
+          text: plaintext,
+          timestamp: Date.now(),
+          messageNumber: item.messageNumber,
+        });
+        console.log(`[${item.from}/${item.fromDeviceId}] ${plaintext}`);
+      } catch (err) {
+        console.error("Failed to decrypt pulled message:", err);
+      }
+    }
+    rl.prompt();
+  }
+});
+
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
+
+rl.setPrompt("> ");
+rl.prompt();
+
+rl.on("line", (line) => {
+  const text = line.trim();
+
+  if (!text) {
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/reset") {
+    SessionStore.delete(userId, deviceId, targetId, targetDeviceId);
+    session = null;
+    console.log("local session deleted");
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/history") {
+  const messages = MessageStore.list(userId, deviceId, targetId, targetDeviceId);
+
+  if (messages.length === 0) {
+    console.log("no message history");
+    rl.prompt();
+    return;
+  }
+
+  for (const item of messages) {
+    const time = new Date(item.timestamp).toLocaleString();
+    const arrow = item.direction === "out" ? "->" : "<-";
+
+    console.log(
+      `[${time}] ${item.from}/${item.fromDeviceId} ${arrow} ${item.to}/${item.toDeviceId}: ${item.text}`
+    );
+  }
+
+  rl.prompt();
+  return;
+  }
+  if (text === "/pull") {
+    ws.send(JSON.stringify({ type: "pull", userId, deviceId }));
+    return;
+  }
+
+  sendChat(text);
   rl.prompt();
 });

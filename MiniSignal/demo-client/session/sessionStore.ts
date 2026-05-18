@@ -1,68 +1,72 @@
 import fs from "fs";
+import path from "path";
+import { MiniSessionState } from "./sessionState";
 
-export const SESSION_VERSION = 1;
+const SESSION_VERSION = 2;
 
 export class SessionStore {
+  static storageDir() {
+    return path.join(__dirname, "..", "storage");
+  }
 
   static getPath(
     userId: string,
-    targetId: string
+    deviceId: string,
+    targetId: string,
+    targetDeviceId: string
   ) {
-
-    return `./storage/session_${userId}_${targetId}.json`;
+    return path.join(
+      this.storageDir(),
+      `session_${userId}_${deviceId}__${targetId}_${targetDeviceId}.json`
+    );
   }
 
-  static save(
-
-    userId: string,
-
-    targetId: string,
-
-    data: any
-  ) {
-
-    const sessionData = {
-      version: SESSION_VERSION,
-      ...data
-    };
+  static save(state: MiniSessionState) {
+    if (!fs.existsSync(this.storageDir())) {
+      fs.mkdirSync(this.storageDir(), { recursive: true });
+    }
 
     fs.writeFileSync(
-
       this.getPath(
-        userId,
-        targetId
+        state.localUserId,
+        state.localDeviceId,
+        state.remoteUserId,
+        state.remoteDeviceId
       ),
-
-      JSON.stringify(
-        sessionData,
-        null,
-        2
-      )
+      JSON.stringify({ ...state, version: SESSION_VERSION }, null, 2)
     );
   }
 
   static load(
     userId: string,
-    targetId: string
-  ) {
+    deviceId: string,
+    targetId: string,
+    targetDeviceId: string
+  ): MiniSessionState | null {
+    const file = this.getPath(userId, deviceId, targetId, targetDeviceId);
 
-    const path =
-      this.getPath(
-        userId,
-        targetId
-      );
-
-    if (
-      !fs.existsSync(path)
-    ) {
+    if (!fs.existsSync(file)) {
       return null;
     }
 
-     return JSON.parse(
-      fs.readFileSync(
-        path,
-        "utf8"
-      )
-    );
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+
+    if (parsed.version !== SESSION_VERSION) {
+      return null;
+    }
+
+    return parsed as MiniSessionState;
+  }
+
+  static delete(
+    userId: string,
+    deviceId: string,
+    targetId: string,
+    targetDeviceId: string
+  ) {
+    const file = this.getPath(userId, deviceId, targetId, targetDeviceId);
+    if (fs.existsSync(file)) {
+      fs.unlinkSync(file);
+    }
   }
 }

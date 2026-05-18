@@ -1,0 +1,12 @@
+[
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello alice 1",
+    "timestamp": 1779099133635,
+    "messageNumber": 0
+  }
+]

@@ -1,0 +1,52 @@
+[
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob 1",
+    "timestamp": 1779099129089,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "/history",
+    "timestamp": 1779099143953,
+    "messageNumber": 1
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "/history",
+    "timestamp": 1779099388217,
+    "messageNumber": 2
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "q",
+    "timestamp": 1779099532539,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "q",
+    "timestamp": 1779099532540,
+    "messageNumber": 0
+  }
+]
