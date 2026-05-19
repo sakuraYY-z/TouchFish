@@ -48,5 +48,25 @@
     "text": "Bob 输入：hello alice 2",
     "timestamp": 1779108386109,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello alice 1",
+    "timestamp": 1779175667726,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello alice 1",
+    "timestamp": 1779175667732,
+    "messageNumber": 0
   }
 ]

@@ -102,6 +102,8 @@ function createSessionFromRoot(
     remoteRatchetPublicKey,
 
     previousSendCounter: 0,
+
+    skippedMessageKeys: {},
   };
 
   saveSession();
@@ -127,6 +129,69 @@ function encryptForSend(plaintext: string) {
   saveSession();
 
   return { encrypted, messageNumber };
+}
+
+function skippedKeyId(ratchetPublicKey: string | null, messageNumber: number) {
+  return `${ratchetPublicKey ?? "initial"}:${messageNumber}`;
+}
+
+function tryDecryptWithSkippedKey(
+  messageNumber: number,
+  payload: any,
+  remoteRatchetPublicKey: string | null
+) {
+  if (!session) {
+    throw new Error("session not established");
+  }
+
+  const keyId = skippedKeyId(remoteRatchetPublicKey, messageNumber);
+  const savedMessageKey = session.skippedMessageKeys[keyId];
+
+  if (!savedMessageKey) {
+    return null;
+  }
+
+  const plaintext = CryptoManager.decrypt(
+    payload.encrypted,
+    payload.iv,
+    payload.tag,
+    savedMessageKey
+  );
+
+  delete session.skippedMessageKeys[keyId];
+  saveSession();
+
+  return plaintext;
+}
+
+function skipMessageKeysUntil(
+  untilMessageNumber: number,
+  remoteRatchetPublicKey: string | null
+) {
+  if (!session) {
+    throw new Error("session not established");
+  }
+
+  const MAX_SKIP = 50;
+
+  if (untilMessageNumber - session.recvCounter > MAX_SKIP) {
+    throw new Error(
+      `too many skipped messages: current=${session.recvCounter}, received=${untilMessageNumber}`
+    );
+  }
+
+  while (session.recvCounter < untilMessageNumber) {
+    const chain = Buffer.from(session.recvChainKey, "base64");
+    const { nextChainKey, messageKey } = nextMessageKey(chain);
+
+    const keyId = skippedKeyId(remoteRatchetPublicKey, session.recvCounter);
+
+    session.skippedMessageKeys[keyId] = messageKey.toString("base64");
+    session.recvChainKey = nextChainKey.toString("base64");
+    session.recvCounter += 1;
+  }
+
+  saveSession();
 }
 
 function applyReceiveRatchetIfNeeded(remoteRatchetPublicKey: string | null) {
@@ -204,14 +269,47 @@ function decryptIncoming(
     throw new Error("session not established");
   }
 
+  if (!session.skippedMessageKeys) {
+  session.skippedMessageKeys = {};
+  }
+
+  /**
+   * 1. 如果是已经跳过保存过的旧消息，直接用 skipped key 解密。
+   */
+  const skippedPlaintext = tryDecryptWithSkippedKey(
+    messageNumber,
+    payload,
+    remoteRatchetPublicKey
+  );
+
+  if (skippedPlaintext !== null) {
+    return skippedPlaintext;
+  }
+
+  /**
+   * 2. 如果对方换了 ratchet 公钥，先执行 DH Ratchet。
+   */
   applyReceiveRatchetIfNeeded(remoteRatchetPublicKey);
 
-  if (messageNumber !== session.recvCounter) {
+  /**
+   * 3. 如果收到未来消息，保存中间跳过的 message keys。
+   */
+  if (messageNumber > session.recvCounter) {
+    skipMessageKeysUntil(messageNumber, remoteRatchetPublicKey);
+  }
+
+  /**
+   * 4. 如果收到过去消息，但 skipped keys 里没有，就认为重复或非法。
+   */
+  if (messageNumber < session.recvCounter) {
     throw new Error(
-      `message order mismatch: expected ${session.recvCounter}, got ${messageNumber}`
+      `old or replayed message: current=${session.recvCounter}, got=${messageNumber}`
     );
   }
 
+  /**
+   * 5. 正常解密当前消息。
+   */
   const chain = Buffer.from(session.recvChainKey, "base64");
   const { nextChainKey, messageKey } = nextMessageKey(chain);
 

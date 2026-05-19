@@ -22,6 +22,8 @@ export interface MiniSessionState {
   remoteRatchetPublicKey: string | null;
 
   previousSendCounter: number;
+
+  skippedMessageKeys: Record<string, string>;
 }
 
 export function pairRole(
