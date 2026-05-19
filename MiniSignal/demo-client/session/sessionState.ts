@@ -22,6 +22,7 @@ export interface MiniSessionState {
   remoteRatchetPublicKey: string | null;
 
   previousSendCounter: number;
+  processedMessageIds: Record<string, true>;
 
   skippedMessageKeys: Record<string, string>;
 }

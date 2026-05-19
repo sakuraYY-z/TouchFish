@@ -102,6 +102,7 @@ function createSessionFromRoot(
     remoteRatchetPublicKey,
 
     previousSendCounter: 0,
+    processedMessageIds: {},
 
     skippedMessageKeys: {},
   };
@@ -129,6 +130,52 @@ function encryptForSend(plaintext: string) {
   saveSession();
 
   return { encrypted, messageNumber };
+}
+
+function messageId(
+  from: string,
+  fromDeviceId: string,
+  ratchetPublicKey: string | null,
+  messageNumber: number
+) {
+  return `${from}:${fromDeviceId}:${ratchetPublicKey ?? "initial"}:${messageNumber}`;
+}
+
+function ensureReplayProtectionState() {
+  if (!session) {
+    throw new Error("session not established");
+  }
+
+  if (!session.skippedMessageKeys) {
+    session.skippedMessageKeys = {};
+  }
+
+  if (!session.processedMessageIds) {
+    session.processedMessageIds = {};
+  }
+}
+
+function assertNotReplayed(id: string) {
+  if (!session) {
+    throw new Error("session not established");
+  }
+
+  ensureReplayProtectionState();
+
+  if (session.processedMessageIds[id]) {
+    throw new Error(`replayed message rejected: ${id}`);
+  }
+}
+
+function markMessageProcessed(id: string) {
+  if (!session) {
+    throw new Error("session not established");
+  }
+
+  ensureReplayProtectionState();
+
+  session.processedMessageIds[id] = true;
+  saveSession();
 }
 
 function skippedKeyId(ratchetPublicKey: string | null, messageNumber: number) {
@@ -261,6 +308,8 @@ function applyReceiveRatchetIfNeeded(remoteRatchetPublicKey: string | null) {
 }
 
 function decryptIncoming(
+  from: string,
+  fromDeviceId: string,
   messageNumber: number,
   payload: any,
   remoteRatchetPublicKey: string | null = null
@@ -272,6 +321,17 @@ function decryptIncoming(
   if (!session.skippedMessageKeys) {
   session.skippedMessageKeys = {};
   }
+
+  ensureReplayProtectionState();
+
+  const id = messageId(
+    from,
+    fromDeviceId,
+    remoteRatchetPublicKey,
+    messageNumber
+  );
+
+  assertNotReplayed(id);
 
   /**
    * 1. 如果是已经跳过保存过的旧消息，直接用 skipped key 解密。
@@ -322,6 +382,8 @@ function decryptIncoming(
 
   session.recvCounter += 1;
   session.recvChainKey = nextChainKey.toString("base64");
+
+  markMessageProcessed(id);
   saveSession();
 
   return plaintext;
@@ -512,6 +574,8 @@ ws.on("message", (data) => {
   if (msg.type === "message") {
     try {
       const plaintext = decryptIncoming(
+      msg.from,
+      msg.fromDeviceId,
       msg.messageNumber,
       msg.payload,
       msg.ratchetPublicKey ?? null
@@ -542,6 +606,8 @@ ws.on("message", (data) => {
     for (const item of msg.messages ?? []) {
       try {
         const plaintext = decryptIncoming(
+        item.from,
+        item.fromDeviceId,
         item.messageNumber,
         item.payload,
         item.ratchetPublicKey ?? null

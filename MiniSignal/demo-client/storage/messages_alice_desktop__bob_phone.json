@@ -578,5 +578,65 @@
     "text": "213m",
     "timestamp": 1779175965639,
     "messageNumber": 24
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob 1",
+    "timestamp": 1779177420130,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello bob 1",
+    "timestamp": 1779177420136,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "Alice: hello bob 2",
+    "timestamp": 1779177481189,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "Alice: hello bob 2",
+    "timestamp": 1779177481194,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob replay test",
+    "timestamp": 1779177685644,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello bob replay test",
+    "timestamp": 1779177685650,
+    "messageNumber": 0
   }
 ]

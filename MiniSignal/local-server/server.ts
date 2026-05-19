@@ -137,7 +137,9 @@ wss.on("connection", (ws) => {
       };
 
       const status = relay.deliverOrQueue(users, cipherMessage);
-
+      
+      
+      
       send(ws, {
         type: "message-status",
         messageNumber: cipherMessage.messageNumber,
