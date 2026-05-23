@@ -35,11 +35,38 @@ let session: MiniSessionState | null = SessionStore.load(
 );
 
 let pendingMessage: string | null = null;
+let resetInProgress = false;
 
 function saveSession() {
   if (session) {
     SessionStore.save(session);
   }
+}
+
+function clearLocalSession() {
+  SessionStore.delete(userId, deviceId, targetId, targetDeviceId);
+  session = null;
+}
+
+function sendSessionResetRequest(reason: string) {
+  if (resetInProgress) {
+    return;
+  }
+
+  resetInProgress = true;
+
+  console.log("Session error detected, requesting session reset...");
+
+  ws.send(
+    JSON.stringify({
+      type: "session-reset-request",
+      from: userId,
+      fromDeviceId: deviceId,
+      target: targetId,
+      targetDeviceId,
+      reason,
+    })
+  );
 }
 
 function createSessionFromRoot(
@@ -495,6 +522,48 @@ ws.on("message", (data) => {
     return;
   }
 
+  if (msg.type === "session-reset-request") {
+    console.log();
+    console.log(
+      `Session reset requested by ${msg.from}/${msg.fromDeviceId}: ${msg.reason}`
+    );
+
+    clearLocalSession();
+    resetInProgress = false;
+
+    ws.send(
+      JSON.stringify({
+        type: "session-reset-ok",
+        from: userId,
+        fromDeviceId: deviceId,
+        target: msg.from,
+        targetDeviceId: msg.fromDeviceId,
+      })
+    );
+
+    console.log("local session deleted, next message will rebuild X3DH session");
+    rl.prompt();
+    return;
+  }
+
+  if (msg.type === "session-reset-ok") {
+    console.log();
+    console.log(`Session reset confirmed by ${msg.from}/${msg.fromDeviceId}`);
+
+    clearLocalSession();
+    resetInProgress = false;
+
+    console.log("local session deleted, next message will rebuild X3DH session");
+    rl.prompt();
+    return;
+  }
+
+  if (msg.type === "session-reset-status") {
+    console.log(`session reset request: ${msg.status}`);
+    rl.prompt();
+    return;
+  }
+
   if (msg.type === "message-status") {
     console.log(`message ${msg.messageNumber}: ${msg.status}`);
     rl.prompt();
@@ -587,10 +656,10 @@ ws.on("message", (data) => {
       
       MessageStore.append(targetId, targetDeviceId, userId, deviceId, {
         direction: "in",
-        from: userId,
-        fromDeviceId: deviceId,
-        to: targetId,
-        toDeviceId: targetDeviceId,
+        from: msg.from,
+        fromDeviceId: msg.fromDeviceId,
+        to: userId,
+        toDeviceId: deviceId,
         text: plaintext,
         timestamp: Date.now(),
         messageNumber: msg.messageNumber,
@@ -599,7 +668,12 @@ ws.on("message", (data) => {
       console.log(`[${msg.from}/${msg.fromDeviceId}] ${plaintext}`);
     } catch (err) {
       console.error("Failed to decrypt message:", err);
-      console.error("Tip: delete demo-client/storage/session_*.json on both clients and retry.");
+
+      clearLocalSession();
+
+      sendSessionResetRequest(
+        err instanceof Error ? err.message : "decrypt failed"
+      );
     }
 
     rl.prompt();
@@ -619,10 +693,10 @@ ws.on("message", (data) => {
         
         MessageStore.append(targetId, targetDeviceId, userId, deviceId, {
           direction: "in",
-          from: userId,
-          fromDeviceId: deviceId,
-          to: targetId,
-          toDeviceId: targetDeviceId,
+          from: msg.from,
+          fromDeviceId: msg.fromDeviceId,
+          to: userId,
+          toDeviceId: deviceId,
           text: plaintext,
           timestamp: Date.now(),
           messageNumber: item.messageNumber,
@@ -630,6 +704,12 @@ ws.on("message", (data) => {
         console.log(`[${item.from}/${item.fromDeviceId}] ${plaintext}`);
       } catch (err) {
         console.error("Failed to decrypt pulled message:", err);
+
+        clearLocalSession();
+
+        sendSessionResetRequest(
+          err instanceof Error ? err.message : "decrypt failed"
+        );
       }
     }
     rl.prompt();
@@ -653,8 +733,8 @@ rl.on("line", (line) => {
   }
 
   if (text === "/reset") {
-    SessionStore.delete(userId, deviceId, targetId, targetDeviceId);
-    session = null;
+    clearLocalSession();
+    resetInProgress = false;
     console.log("local session deleted");
     rl.prompt();
     return;

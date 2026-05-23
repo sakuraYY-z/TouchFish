@@ -4,17 +4,15 @@
   "localDeviceId": "desktop",
   "remoteUserId": "bob",
   "remoteDeviceId": "phone",
-  "rootKey": "rE3SmqQDeGfzrqvB2Dr683lLljTrd18Fuh63h3fQ9c8=",
-  "sendChainKey": "+wRNl5B8mRyYaYW2nFwBmOIbQZovT+mXHiS/MGG/rgg=",
-  "recvChainKey": "6sGHfRRMZ3/q1OYU3R1/u+nAU+hYOjTgTFNpQ72rn0Y=",
-  "sendCounter": 0,
-  "recvCounter": 1,
-  "localRatchetPrivateKey": "EN+R8a6cMJ1WNqZW8taLzmscJ7Dabu2Xstaha69aulM=",
-  "localRatchetPublicKey": "BSrgY1I1fZu9qzEpph6VXpsTngOdrVNPEqJUZ+d3ccsD",
-  "remoteRatchetPublicKey": "BUuN0CIwdXTwmW4KrTmT1i+DSN1asnecxBK7dsoyd3F6",
-  "previousSendCounter": 1,
-  "processedMessageIds": {
-    "bob:phone:BUuN0CIwdXTwmW4KrTmT1i+DSN1asnecxBK7dsoyd3F6:0": true
-  },
+  "rootKey": "7iuRfE1E2+NWujSWuVRly1N+9lvwxYFLAFcfYvFyahE=",
+  "sendChainKey": "5lF4ctd5kvl6+7l09ujZ/flyo49FViUvnF2oGvx1JB8=",
+  "recvChainKey": "ZDZFLI29c4t5gNa/R1a5fGBhXJSGj2pimmlofDB1XF8=",
+  "sendCounter": 1,
+  "recvCounter": 0,
+  "localRatchetPrivateKey": "kCtA6O013ZiS3LY4cvh3aaa+8423DKcwcgf0P5YmEEY=",
+  "localRatchetPublicKey": "BWac1LiEHKHZ0VlBz6lPmjwIVnWACKU+BKJ+p7WcbVM5",
+  "remoteRatchetPublicKey": null,
+  "previousSendCounter": 0,
+  "processedMessageIds": {},
   "skippedMessageKeys": {}
 }

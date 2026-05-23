@@ -4,17 +4,17 @@
   "localDeviceId": "phone",
   "remoteUserId": "alice",
   "remoteDeviceId": "desktop",
-  "rootKey": "aA6I1ZWnQlmCRkYpQqi3FrgKANt8JT8vtE3zRqHtJlo=",
-  "sendChainKey": "6sGHfRRMZ3/q1OYU3R1/u+nAU+hYOjTgTFNpQ72rn0Y=",
-  "recvChainKey": "vwuvpXZQ9VBgx+w07KakcCZp6r2mHUfc+RjV67axcGE=",
-  "sendCounter": 1,
+  "rootKey": "uWIqucr6otY0FVOrqIlBwYWpfDbXCqqfDMHK3BFqUeY=",
+  "sendChainKey": "YlxwO8br2bVdamk+N8GRfiNDvspPQPNRbSW/7SecAAo=",
+  "recvChainKey": "5lF4ctd5kvl6+7l09ujZ/flyo49FViUvnF2oGvx1JB8=",
+  "sendCounter": 0,
   "recvCounter": 1,
-  "localRatchetPrivateKey": "2LBDgkIx7iV+fAXLnpBm8TJR+iGtLEomafJDpPI183s=",
-  "localRatchetPublicKey": "BUuN0CIwdXTwmW4KrTmT1i+DSN1asnecxBK7dsoyd3F6",
-  "remoteRatchetPublicKey": "Bam30LFKl1E4XVt3CAABJmAoBXTXxKa8L7WS0RPdxrcG",
+  "localRatchetPrivateKey": "eC7rugtims75uWfRo6XHdCKF9ctmAV906ILb79KHGH8=",
+  "localRatchetPublicKey": "BWOhDsU8zU1wneugWkUZx9zFmGl6phyhWYegVTW4TDYW",
+  "remoteRatchetPublicKey": "BWac1LiEHKHZ0VlBz6lPmjwIVnWACKU+BKJ+p7WcbVM5",
   "previousSendCounter": 0,
   "processedMessageIds": {
-    "alice:desktop:Bam30LFKl1E4XVt3CAABJmAoBXTXxKa8L7WS0RPdxrcG:0": true
+    "alice:desktop:BWac1LiEHKHZ0VlBz6lPmjwIVnWACKU+BKJ+p7WcbVM5:0": true
   },
   "skippedMessageKeys": {}
 }

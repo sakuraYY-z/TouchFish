@@ -155,6 +155,60 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    if (message.type === "session-reset-request") {
+      const target = users.getDevice(
+        String(message.target),
+        String(message.targetDeviceId ?? "default")
+      );
+
+      const payload = {
+        type: "session-reset-request",
+        from: String(message.from),
+        fromDeviceId: String(message.fromDeviceId ?? "default"),
+        target: String(message.target),
+        targetDeviceId: String(message.targetDeviceId ?? "default"),
+        reason: String(message.reason ?? "decrypt failed"),
+        timestamp: Date.now(),
+      };
+
+      if (target && target.ws.readyState === WebSocket.OPEN) {
+        send(target.ws, payload);
+        send(ws, {
+          type: "session-reset-status",
+          status: "delivered",
+        });
+      } else {
+        send(ws, {
+          type: "session-reset-status",
+          status: "target-offline",
+        });
+      }
+
+      return;
+    }
+
+    if (message.type === "session-reset-ok") {
+      const target = users.getDevice(
+        String(message.target),
+        String(message.targetDeviceId ?? "default")
+      );
+
+      const payload = {
+        type: "session-reset-ok",
+        from: String(message.from),
+        fromDeviceId: String(message.fromDeviceId ?? "default"),
+        target: String(message.target),
+        targetDeviceId: String(message.targetDeviceId ?? "default"),
+        timestamp: Date.now(),
+      };
+
+      if (target && target.ws.readyState === WebSocket.OPEN) {
+        send(target.ws, payload);
+      }
+
+      return;
+    }
+
     if (message.type === "message") {
       const cipherMessage: CipherMessage = {
         type: "message",

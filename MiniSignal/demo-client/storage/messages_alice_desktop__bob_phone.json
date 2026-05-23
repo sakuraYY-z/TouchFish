@@ -698,5 +698,55 @@
     "text": "hello bob first",
     "timestamp": 1779529579745,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob 1",
+    "timestamp": 1779530849185,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob 1",
+    "timestamp": 1779530849188,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "this should trigger reset",
+    "timestamp": 1779530901331,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello after reset",
+    "timestamp": 1779530942333,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello after reset",
+    "timestamp": 1779530942336,
+    "messageNumber": 0
   }
 ]
