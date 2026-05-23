@@ -5,6 +5,7 @@ import { UserRegistry } from "./users";
 interface PreKeyBundle {
   identityKey: string;
   signedPreKey: string;
+  signedPreKeySignature: string;
   oneTimePreKey: string | null;
 }
 
@@ -107,6 +108,7 @@ wss.on("connection", (ws) => {
       const responseBundle = {
         identityKey: bundle.identityKey,
         signedPreKey: bundle.signedPreKey,
+        signedPreKeySignature: bundle.signedPreKeySignature,
         oneTimePreKey: bundle.oneTimePreKey,
       };
 

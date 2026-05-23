@@ -462,6 +462,17 @@ function parsePublicKey(base64: string) {
   return PublicKey.deserialize(Buffer.from(base64, "base64"));
 }
 
+function verifySignedPreKeySignature(input: {
+  identityPublicKey: PublicKey;
+  signedPreKey: string;
+  signature: string;
+}) {
+  return input.identityPublicKey.verify(
+    Buffer.from(input.signedPreKey, "utf8"),
+    Buffer.from(input.signature, "base64")
+  );
+}
+
 function buildX3DHSignatureData(input: {
   from: string;
   fromDeviceId: string;
@@ -649,6 +660,27 @@ ws.on("message", (data) => {
     }
 
     const remoteIdentity = parsePublicKey(msg.bundle.identityKey);
+
+    if (!msg.bundle.signedPreKeySignature) {
+      console.error("PreKeyBundle rejected: missing signedPreKeySignature");
+      rl.prompt();
+      return;
+    }
+
+    const signedPreKeyValid = verifySignedPreKeySignature({
+      identityPublicKey: remoteIdentity,
+      signedPreKey: msg.bundle.signedPreKey,
+      signature: msg.bundle.signedPreKeySignature,
+    });
+
+    if (!signedPreKeyValid) {
+      console.error("PreKeyBundle rejected: invalid signedPreKey signature");
+      rl.prompt();
+      return;
+    }
+
+    console.log("SignedPreKey signature verified");
+
     const remoteSignedPreKey = parsePublicKey(msg.bundle.signedPreKey);
       
       const remoteOneTimePreKey = msg.bundle.oneTimePreKey

@@ -25,35 +25,26 @@ export class PreKeyManager {
   }
 
   getBundle() {
+    const signedPreKeyPublicBase64 = Buffer.from(
+      this.signedPreKey.getPublicKey().serialize()
+    ).toString("base64");
+
+    const signature = this.identityKey.sign(
+      Buffer.from(signedPreKeyPublicBase64, "utf8")
+    );
 
     return {
+      identityKey: Buffer.from(
+        this.identityKey.getPublicKey().serialize()
+      ).toString("base64"),
 
-      identityKey:
-        Buffer
-          .from(
-            this.identityKey
-              .getPublicKey()
-              .serialize()
-          )
-          .toString("base64"),
+      signedPreKey: signedPreKeyPublicBase64,
 
-      signedPreKey:
-        Buffer
-          .from(
-            this.signedPreKey
-              .getPublicKey()
-              .serialize()
-          )
-          .toString("base64"),
+      signedPreKeySignature: Buffer.from(signature).toString("base64"),
 
-      oneTimePreKey:
-        Buffer
-          .from(
-            this.oneTimePreKey
-              .getPublicKey()
-              .serialize()
-          )
-          .toString("base64")
+      oneTimePreKey: Buffer.from(
+        this.oneTimePreKey.getPublicKey().serialize()
+      ).toString("base64"),
     };
   }
 

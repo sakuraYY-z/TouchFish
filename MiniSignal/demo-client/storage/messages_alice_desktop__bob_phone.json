@@ -798,5 +798,25 @@
     "text": "hello bob signed x3dh",
     "timestamp": 1779531813181,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob signed prekey",
+    "timestamp": 1779532423338,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob signed prekey",
+    "timestamp": 1779532423343,
+    "messageNumber": 0
   }
 ]
