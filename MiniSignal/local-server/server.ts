@@ -144,6 +144,7 @@ wss.on("connection", (ws) => {
         ephemeralPublic: message.ephemeralPublic,
         identityKey: message.identityKey,
         ratchetPublicKey: message.ratchetPublicKey ?? null,
+        signature: message.signature,
         usedOneTimePreKey: Boolean(message.usedOneTimePreKey),
       };
 

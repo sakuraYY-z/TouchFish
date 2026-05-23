@@ -461,6 +461,71 @@ function sendChat(line: string) {
 function parsePublicKey(base64: string) {
   return PublicKey.deserialize(Buffer.from(base64, "base64"));
 }
+
+function buildX3DHSignatureData(input: {
+  from: string;
+  fromDeviceId: string;
+  target: string;
+  targetDeviceId: string;
+  ephemeralPublic: string;
+  ratchetPublicKey: string | null;
+}) {
+  return Buffer.from(
+    JSON.stringify({
+      from: input.from,
+      fromDeviceId: input.fromDeviceId,
+      target: input.target,
+      targetDeviceId: input.targetDeviceId,
+      ephemeralPublic: input.ephemeralPublic,
+      ratchetPublicKey: input.ratchetPublicKey ?? null,
+    }),
+    "utf8"
+  );
+}
+
+function signX3DHInit(input: {
+  from: string;
+  fromDeviceId: string;
+  target: string;
+  targetDeviceId: string;
+  ephemeralPublic: string;
+  ratchetPublicKey: string | null;
+}) {
+  const data = buildX3DHSignatureData(input);
+
+  console.log("SIGN DATA:", data.toString("utf8"));
+
+  const signature = identity.getPrivateKey().sign(data);
+
+  return Buffer.from(signature).toString("base64");
+}
+
+function verifyX3DHInitSignature(input: {
+  identityPublicKey: PublicKey;
+  from: string;
+  fromDeviceId: string;
+  target: string;
+  targetDeviceId: string;
+  ephemeralPublic: string;
+  ratchetPublicKey: string | null;
+  signature: string;
+}) {
+  const data = buildX3DHSignatureData({
+    from: input.from,
+    fromDeviceId: input.fromDeviceId,
+    target: input.target,
+    targetDeviceId: input.targetDeviceId,
+    ephemeralPublic: input.ephemeralPublic,
+    ratchetPublicKey: input.ratchetPublicKey,
+  });
+
+  console.log("VERIFY DATA:", data.toString("utf8"));
+
+  const signature = Buffer.from(input.signature, "base64");
+
+  return input.identityPublicKey.verify(data, signature);
+}
+
 function serializePrivateKey(key: PrivateKey) {
   return Buffer.from(key.serialize()).toString("base64");
 }
@@ -601,16 +666,23 @@ ws.on("message", (data) => {
 
     console.log("X3DH initiator session established");
 
+    const x3dhInitPayload = {
+      from: userId,
+      fromDeviceId: deviceId,
+      target: targetId,
+      targetDeviceId,
+      ephemeralPublic: result.ephemeralPublic,
+      ratchetPublicKey: session?.localRatchetPublicKey ?? null,
+    };
+
+    const x3dhSignature = signX3DHInit(x3dhInitPayload);
+
     ws.send(
       JSON.stringify({
          type: "x3dh-init",
-         from: userId,
-         fromDeviceId: deviceId,
-         target: targetId,
-         targetDeviceId,
-         ephemeralPublic: result.ephemeralPublic,
+         ...x3dhInitPayload,
          identityKey: identity.getPublicKeyBase64(),
-         ratchetPublicKey: session?.localRatchetPublicKey ?? null,
+         signature: x3dhSignature,
          usedOneTimePreKey: msg.bundle.oneTimePreKey ? true : false,
       })
     );
@@ -628,6 +700,31 @@ ws.on("message", (data) => {
   if (msg.type === "x3dh-init") {
     const remoteEphemeral = parsePublicKey(msg.ephemeralPublic);
     const remoteIdentity = parsePublicKey(msg.identityKey);
+
+    if (!msg.signature) {
+      console.error("X3DH init rejected: missing signature");
+      rl.prompt();
+      return;
+    }
+
+    const signatureValid = verifyX3DHInitSignature({
+      identityPublicKey: remoteIdentity,
+      from: msg.from,
+      fromDeviceId: msg.fromDeviceId,
+      target: msg.target,
+      targetDeviceId: msg.targetDeviceId,
+      ephemeralPublic: msg.ephemeralPublic,
+      ratchetPublicKey: msg.ratchetPublicKey ?? null,
+      signature: msg.signature,
+    });
+
+    if (!signatureValid) {
+      console.error("X3DH init rejected: invalid identity signature");
+      rl.prompt();
+      return;
+    }
+
+    console.log("X3DH init signature verified");
 
     const rootKey = X3DHManager.responder(
       identity.getPrivateKey(),
