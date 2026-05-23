@@ -10,27 +10,41 @@ import {
 } from "./session";
 
 export class X3DHManager {
+  static deriveRootKey(parts: Buffer[]) {
+    const master = Buffer.concat(parts);
+
+    const rootKey = crypto.hkdfSync(
+      "sha256",
+      master,
+      Buffer.alloc(32),
+      Buffer.from("MiniSignal"),
+      32
+    );
+
+    return Buffer.from(rootKey);
+  }
+
   static initiator(
-    identityPrivate: PrivateKey,
-    remoteIdentityPublic: PublicKey,
-    remoteSignedPreKeyPublic: PublicKey,
-    remoteOneTimePreKeyPublic: PublicKey | null
+    identityKey: PrivateKey,
+    remoteIdentity: PublicKey,
+    remoteSignedPreKey: PublicKey,
+    remoteOneTimePreKey: PublicKey | null
   ) {
-    const ephemeralPrivate = PrivateKey.generate();
+    const ephemeralKey = PrivateKey.generate();
 
     const dh1 = SessionManager.createSharedSecret(
-      identityPrivate,
-      remoteSignedPreKeyPublic
+      identityKey,
+      remoteSignedPreKey
     );
 
     const dh2 = SessionManager.createSharedSecret(
-      ephemeralPrivate,
-      remoteIdentityPublic
+      ephemeralKey,
+      remoteIdentity
     );
 
     const dh3 = SessionManager.createSharedSecret(
-      ephemeralPrivate,
-      remoteSignedPreKeyPublic
+      ephemeralKey,
+      remoteSignedPreKey
     );
 
     const dhParts: Buffer[] = [
@@ -39,50 +53,50 @@ export class X3DHManager {
       Buffer.from(dh3),
     ];
 
-    if (remoteOneTimePreKeyPublic) {
+    if (remoteOneTimePreKey) {
       const dh4 = SessionManager.createSharedSecret(
-        ephemeralPrivate,
-        remoteOneTimePreKeyPublic
+        ephemeralKey,
+        remoteOneTimePreKey
       );
 
       dhParts.push(Buffer.from(dh4));
     }
 
-    const sharedSecret = Buffer.concat(dhParts);
-
-    const rootKey = crypto
-      .createHash("sha256")
-      .update(sharedSecret)
-      .digest();
+    const rootKey = this.deriveRootKey(dhParts);
 
     return {
+      ephemeralPublic: Buffer
+        .from(
+          ephemeralKey
+            .getPublicKey()
+            .serialize()
+        )
+        .toString("base64"),
+
       rootKey: rootKey.toString("base64"),
-      ephemeralPublic: Buffer.from(
-        ephemeralPrivate.getPublicKey().serialize()
-      ).toString("base64"),
     };
   }
 
   static responder(
-    identityPrivate: PrivateKey,
-    signedPreKeyPrivate: PrivateKey,
-    oneTimePreKeyPrivate: PrivateKey | null,
-    remoteEphemeralPublic: PublicKey,
-    remoteIdentityPublic: PublicKey
+    identityKey: PrivateKey,
+    signedPreKey: PrivateKey,
+    oneTimePreKey: PrivateKey | null,
+    remoteEphemeral: PublicKey,
+    remoteIdentity: PublicKey
   ) {
     const dh1 = SessionManager.createSharedSecret(
-      signedPreKeyPrivate,
-      remoteIdentityPublic
+      signedPreKey,
+      remoteIdentity
     );
 
     const dh2 = SessionManager.createSharedSecret(
-      identityPrivate,
-      remoteEphemeralPublic
+      identityKey,
+      remoteEphemeral
     );
 
     const dh3 = SessionManager.createSharedSecret(
-      signedPreKeyPrivate,
-      remoteEphemeralPublic
+      signedPreKey,
+      remoteEphemeral
     );
 
     const dhParts: Buffer[] = [
@@ -91,21 +105,16 @@ export class X3DHManager {
       Buffer.from(dh3),
     ];
 
-    if (oneTimePreKeyPrivate) {
+    if (oneTimePreKey) {
       const dh4 = SessionManager.createSharedSecret(
-        oneTimePreKeyPrivate,
-        remoteEphemeralPublic
+        oneTimePreKey,
+        remoteEphemeral
       );
 
       dhParts.push(Buffer.from(dh4));
     }
 
-    const sharedSecret = Buffer.concat(dhParts);
-
-    const rootKey = crypto
-      .createHash("sha256")
-      .update(sharedSecret)
-      .digest();
+    const rootKey = this.deriveRootKey(dhParts);
 
     return rootKey.toString("base64");
   }

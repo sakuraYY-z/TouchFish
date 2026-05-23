@@ -88,5 +88,95 @@
     "text": "Bob: hello alice 1",
     "timestamp": 1779177429019,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello bob first",
+    "timestamp": 1779529420304,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob first",
+    "timestamp": 1779529420307,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello bob second",
+    "timestamp": 1779529465071,
+    "messageNumber": 1
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob second",
+    "timestamp": 1779529465073,
+    "messageNumber": 1
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello bob first",
+    "timestamp": 1779529513920,
+    "messageNumber": 2
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello alice first",
+    "timestamp": 1779529520598,
+    "messageNumber": 2
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello bob second",
+    "timestamp": 1779529526983,
+    "messageNumber": 3
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello alice first",
+    "timestamp": 1779529585600,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello alice first",
+    "timestamp": 1779529585602,
+    "messageNumber": 0
   }
 ]
