@@ -5,7 +5,7 @@ import { UserRegistry } from "./users";
 interface PreKeyBundle {
   identityKey: string;
   signedPreKey: string;
-  oneTimePreKey: string;
+  oneTimePreKey: string | null;
 }
 
 const wss = new WebSocketServer({ port: 8080 });
@@ -86,14 +86,46 @@ wss.on("connection", (ws) => {
     if (message.type === "getPreKeyBundle") {
       const target = String(message.target);
       const targetDeviceId = String(message.targetDeviceId ?? "default");
-      const bundle = bundles.get(deviceKey(target, targetDeviceId));
+      const key = deviceKey(target, targetDeviceId);
+      const bundle = bundles.get(key);
+
+      if (!bundle) {
+        send(ws, {
+          type: "preKeyBundle",
+          target,
+          targetDeviceId,
+          bundle: null,
+        });
+        return;
+      }
+
+      /**
+       * OneTimePreKey 一次性消费：
+       * 1. 先把当前 bundle 返回给请求方
+       * 2. 如果里面有 oneTimePreKey，就在返回后从服务端移除
+       */
+      const responseBundle = {
+        identityKey: bundle.identityKey,
+        signedPreKey: bundle.signedPreKey,
+        oneTimePreKey: bundle.oneTimePreKey,
+      };
+
+      if (bundle.oneTimePreKey) {
+        bundles.set(key, {
+          ...bundle,
+          oneTimePreKey: null,
+        });
+
+        console.log(`${target} (${targetDeviceId}) oneTimePreKey consumed`);
+      }
 
       send(ws, {
         type: "preKeyBundle",
         target,
         targetDeviceId,
-        bundle: bundle ?? null,
+        bundle: responseBundle,
       });
+
       return;
     }
 
@@ -112,6 +144,7 @@ wss.on("connection", (ws) => {
         ephemeralPublic: message.ephemeralPublic,
         identityKey: message.identityKey,
         ratchetPublicKey: message.ratchetPublicKey ?? null,
+        usedOneTimePreKey: Boolean(message.usedOneTimePreKey),
       };
 
       if (target && target.ws.readyState === WebSocket.OPEN) {

@@ -10,151 +10,103 @@ import {
 } from "./session";
 
 export class X3DHManager {
-
-  static deriveRootKey(
-    parts: Buffer[]
-  ) {
-
-    const master =
-      Buffer.concat(parts);
-
-    return crypto.hkdfSync(
-      "sha256",
-      master,
-      Buffer.alloc(32),
-      Buffer.from(
-        "MiniSignal"
-      ),
-      32
-    );
-  }
-
   static initiator(
-    identityKey: PrivateKey,
-
-    remoteIdentity: PublicKey,
-
-    remoteSignedPreKey: PublicKey,
-
-    remoteOneTimePreKey: PublicKey
+    identityPrivate: PrivateKey,
+    remoteIdentityPublic: PublicKey,
+    remoteSignedPreKeyPublic: PublicKey,
+    remoteOneTimePreKeyPublic: PublicKey | null
   ) {
+    const ephemeralPrivate = PrivateKey.generate();
 
-    // Alice Ephemeral
-    const ephemeralKey =
-      PrivateKey.generate();
+    const dh1 = SessionManager.createSharedSecret(
+      identityPrivate,
+      remoteSignedPreKeyPublic
+    );
 
-    // DH1 = IKa × SPKb
-    const dh1 =
-      SessionManager
-        .createSharedSecret(
-          identityKey,
-          remoteSignedPreKey
-        );
+    const dh2 = SessionManager.createSharedSecret(
+      ephemeralPrivate,
+      remoteIdentityPublic
+    );
 
-    // DH2 = EKa × IKb
-    const dh2 =
-      SessionManager
-        .createSharedSecret(
-          ephemeralKey,
-          remoteIdentity
-        );
+    const dh3 = SessionManager.createSharedSecret(
+      ephemeralPrivate,
+      remoteSignedPreKeyPublic
+    );
 
-    // DH3 = EKa × SPKb
-    const dh3 =
-      SessionManager
-        .createSharedSecret(
-          ephemeralKey,
-          remoteSignedPreKey
-        );
+    const dhParts: Buffer[] = [
+      Buffer.from(dh1),
+      Buffer.from(dh2),
+      Buffer.from(dh3),
+    ];
 
-    // DH4 = EKa × OPKb
-    const dh4 =
-      SessionManager
-        .createSharedSecret(
-          ephemeralKey,
-          remoteOneTimePreKey
-        );
+    if (remoteOneTimePreKeyPublic) {
+      const dh4 = SessionManager.createSharedSecret(
+        ephemeralPrivate,
+        remoteOneTimePreKeyPublic
+      );
 
-    const rootKey =
-      this.deriveRootKey([
-        Buffer.from(dh1),
-        Buffer.from(dh2),
-        Buffer.from(dh3),
-        Buffer.from(dh4)
-      ]);
+      dhParts.push(Buffer.from(dh4));
+    }
 
-    // 修复: 确保 rootKey 被正确转换为 base64 字符串
-    // 假设 rootKey 是 Uint8Array 或 Buffer
-    const rootKeyBase64 = Buffer.from(rootKey).toString("base64");
+    const sharedSecret = Buffer.concat(dhParts);
+
+    const rootKey = crypto
+      .createHash("sha256")
+      .update(sharedSecret)
+      .digest();
 
     return {
-
-      ephemeralPublic:
-        Buffer
-          .from(
-            ephemeralKey
-              .getPublicKey()
-              .serialize()
-          )
-          .toString("base64"),
-
-      rootKey:
-        rootKeyBase64
+      rootKey: rootKey.toString("base64"),
+      ephemeralPublic: Buffer.from(
+        ephemeralPrivate.getPublicKey().serialize()
+      ).toString("base64"),
     };
   }
 
   static responder(
-    identityKey: PrivateKey,
-
-    signedPreKey: PrivateKey,
-
-    oneTimePreKey: PrivateKey,
-
-    remoteEphemeral: PublicKey,
-
-    remoteIdentity: PublicKey
+    identityPrivate: PrivateKey,
+    signedPreKeyPrivate: PrivateKey,
+    oneTimePreKeyPrivate: PrivateKey | null,
+    remoteEphemeralPublic: PublicKey,
+    remoteIdentityPublic: PublicKey
   ) {
+    const dh1 = SessionManager.createSharedSecret(
+      signedPreKeyPrivate,
+      remoteIdentityPublic
+    );
 
-    // DH1 = SPKb × IKa
-    const dh1 =
-      SessionManager
-        .createSharedSecret(
-          signedPreKey,
-          remoteIdentity
-        );
+    const dh2 = SessionManager.createSharedSecret(
+      identityPrivate,
+      remoteEphemeralPublic
+    );
 
-    // DH2 = IKb × EKa
-    const dh2 =
-      SessionManager
-        .createSharedSecret(
-          identityKey,
-          remoteEphemeral
-        );
+    const dh3 = SessionManager.createSharedSecret(
+      signedPreKeyPrivate,
+      remoteEphemeralPublic
+    );
 
-    // DH3 = SPKb × EKa
-    const dh3 =
-      SessionManager
-        .createSharedSecret(
-          signedPreKey,
-          remoteEphemeral
-        );
+    const dhParts: Buffer[] = [
+      Buffer.from(dh1),
+      Buffer.from(dh2),
+      Buffer.from(dh3),
+    ];
 
-    // DH4 = OPKb × EKa
-    const dh4 =
-      SessionManager
-        .createSharedSecret(
-          oneTimePreKey,
-          remoteEphemeral
-        );
+    if (oneTimePreKeyPrivate) {
+      const dh4 = SessionManager.createSharedSecret(
+        oneTimePreKeyPrivate,
+        remoteEphemeralPublic
+      );
 
-    const rootKey =
-      this.deriveRootKey([
-        Buffer.from(dh1),
-        Buffer.from(dh2),
-        Buffer.from(dh3),
-        Buffer.from(dh4)
-      ]);
+      dhParts.push(Buffer.from(dh4));
+    }
 
-    return Buffer.from(rootKey).toString("base64");
+    const sharedSecret = Buffer.concat(dhParts);
+
+    const rootKey = crypto
+      .createHash("sha256")
+      .update(sharedSecret)
+      .digest();
+
+    return rootKey.toString("base64");
   }
 }

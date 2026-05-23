@@ -638,5 +638,45 @@
     "text": "hello bob replay test",
     "timestamp": 1779177685650,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob first",
+    "timestamp": 1779527915009,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello bob first",
+    "timestamp": 1779527915014,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob second",
+    "timestamp": 1779527981722,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello bob second",
+    "timestamp": 1779527981725,
+    "messageNumber": 0
   }
 ]

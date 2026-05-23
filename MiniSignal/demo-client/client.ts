@@ -516,14 +516,17 @@ ws.on("message", (data) => {
 
     const remoteIdentity = parsePublicKey(msg.bundle.identityKey);
     const remoteSignedPreKey = parsePublicKey(msg.bundle.signedPreKey);
-    const remoteOneTimePreKey = parsePublicKey(msg.bundle.oneTimePreKey);
+      
+      const remoteOneTimePreKey = msg.bundle.oneTimePreKey
+        ? parsePublicKey(msg.bundle.oneTimePreKey)
+        : null;
 
-    const result = X3DHManager.initiator(
-      identity.getPrivateKey(),
-      remoteIdentity,
-      remoteSignedPreKey,
-      remoteOneTimePreKey
-    );
+      const result = X3DHManager.initiator(
+        identity.getPrivateKey(),
+        remoteIdentity,
+        remoteSignedPreKey,
+        remoteOneTimePreKey
+      );
 
     createSessionFromRoot(result.rootKey);
 
@@ -539,6 +542,7 @@ ws.on("message", (data) => {
          ephemeralPublic: result.ephemeralPublic,
          identityKey: identity.getPublicKeyBase64(),
          ratchetPublicKey: session?.localRatchetPublicKey ?? null,
+         usedOneTimePreKey: msg.bundle.oneTimePreKey ? true : false,
       })
     );
 
@@ -559,7 +563,7 @@ ws.on("message", (data) => {
     const rootKey = X3DHManager.responder(
       identity.getPrivateKey(),
       preKeys.getSignedPreKeyPrivate(),
-      preKeys.getOneTimePreKeyPrivate(),
+      msg.usedOneTimePreKey ? preKeys.getOneTimePreKeyPrivate() : null,
       remoteEphemeral,
       remoteIdentity
     );
