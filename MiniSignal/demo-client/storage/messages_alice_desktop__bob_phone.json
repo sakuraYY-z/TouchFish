@@ -868,5 +868,25 @@
     "text": "hello after bob identity changed",
     "timestamp": 1779704842599,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob session test",
+    "timestamp": 1779710289230,
+    "messageNumber": 1
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob session test",
+    "timestamp": 1779710289233,
+    "messageNumber": 1
   }
 ]

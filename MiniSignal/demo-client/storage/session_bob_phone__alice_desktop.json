@@ -6,15 +6,16 @@
   "remoteDeviceId": "desktop",
   "rootKey": "UW0zzvlQItw4T3nu5T3Opc7Uuo3sVpImg9WaJiwTmX8=",
   "sendChainKey": "uzpCSQedwi5S+ibFAj6XF1Bm0e+53lUBdARdCCWbowA=",
-  "recvChainKey": "k8Tv/z5IWQvhdlm1atudHWDrAR3RKt+6oMbD3oZnS5U=",
+  "recvChainKey": "6yUy4x7YvBAlLbId/WWxKsgSofwHLRSgYiwqBO5UGyU=",
   "sendCounter": 0,
-  "recvCounter": 1,
+  "recvCounter": 2,
   "localRatchetPrivateKey": "2AJAXMe9RR64AFzkGfCc7DETKJdHv2WIaxEaxosFNmk=",
   "localRatchetPublicKey": "BYNTCKVDKzr+qoHQmNS5TcAt6zJDLeEHwsr7s4O4/lYJ",
   "remoteRatchetPublicKey": "BZx+/ZjxA/RPPVWS42YDis32u+e+acuvbw+I20FawOlH",
   "previousSendCounter": 0,
   "processedMessageIds": {
-    "alice:desktop:BZx+/ZjxA/RPPVWS42YDis32u+e+acuvbw+I20FawOlH:0": true
+    "alice:desktop:BZx+/ZjxA/RPPVWS42YDis32u+e+acuvbw+I20FawOlH:0": true,
+    "alice:desktop:BZx+/ZjxA/RPPVWS42YDis32u+e+acuvbw+I20FawOlH:1": true
   },
   "skippedMessageKeys": {}
 }

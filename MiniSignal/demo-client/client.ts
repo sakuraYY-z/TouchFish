@@ -460,6 +460,18 @@ function sendChat(line: string) {
 });
 }
 
+function shortKey(value: string | null | undefined) {
+  if (!value) {
+    return "null";
+  }
+
+  if (value.length <= 16) {
+    return value;
+  }
+
+  return `${value.slice(0, 8)}...${value.slice(-8)}`;
+}
+
 function parsePublicKey(base64: string) {
   return PublicKey.deserialize(Buffer.from(base64, "base64"));
 }
@@ -909,6 +921,49 @@ rl.on("line", (line) => {
     clearLocalSession();
     resetInProgress = false;
     console.log("local session deleted");
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/session") {
+    if (!session) {
+      console.log("no active session");
+      rl.prompt();
+      return;
+    }
+
+    console.log("===== SESSION STATE =====");
+    console.log(`local: ${session.localUserId}/${session.localDeviceId}`);
+    console.log(`remote: ${session.remoteUserId}/${session.remoteDeviceId}`);
+    console.log(`version: ${session.version}`);
+    console.log(`sendCounter: ${session.sendCounter}`);
+    console.log(`recvCounter: ${session.recvCounter}`);
+    console.log(`previousSendCounter: ${session.previousSendCounter}`);
+
+    console.log(`rootKey: ${shortKey(session.rootKey)}`);
+    console.log(`sendChainKey: ${shortKey(session.sendChainKey)}`);
+    console.log(`recvChainKey: ${shortKey(session.recvChainKey)}`);
+
+    console.log(`localRatchetPublicKey: ${shortKey(session.localRatchetPublicKey)}`);
+    console.log(`remoteRatchetPublicKey: ${shortKey(session.remoteRatchetPublicKey)}`);
+
+    console.log(
+      `skippedMessageKeys: ${
+        session.skippedMessageKeys
+          ? Object.keys(session.skippedMessageKeys).length
+          : 0
+      }`
+    );
+
+    console.log(
+      `processedMessageIds: ${
+        session.processedMessageIds
+          ? Object.keys(session.processedMessageIds).length
+          : 0
+      }`
+    );
+
+    console.log("=========================");
     rl.prompt();
     return;
   }
