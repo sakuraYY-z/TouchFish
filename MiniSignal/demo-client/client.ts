@@ -3,6 +3,7 @@ import readline from "readline";
 import WebSocket from "ws";
 import { CryptoManager } from "./crypto/crypto";
 import { IdentityManager } from "./identity/identity";
+import { TrustedIdentityStore } from "./identity/trustedIdentityStore";
 import { MessageStore } from "./message/messageStore";
 import { PreKeyManager } from "./prekey/prekey";
 import { DHRatchetManager } from "./session/dhRatchet";
@@ -13,6 +14,7 @@ import {
 } from "./session/sessionState";
 import { SessionStore } from "./session/sessionStore";
 import { X3DHManager } from "./session/x3dh";
+
 
 const userId = process.argv[2];
 const deviceId = process.argv[3];
@@ -661,6 +663,27 @@ ws.on("message", (data) => {
 
     const remoteIdentity = parsePublicKey(msg.bundle.identityKey);
 
+    const trustResult = TrustedIdentityStore.checkAndTrust(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId,
+      msg.bundle.identityKey
+    );
+
+    if (!trustResult.ok) {
+      console.error();
+      console.error("SECURITY WARNING: remote identity key changed!");
+      console.error(`${targetId}/${targetDeviceId} identityKey is different from trusted record.`);
+      console.error("Session creation rejected. Use /trust-reset if this change is expected.");
+      rl.prompt();
+      return;
+    }
+
+    if (trustResult.firstTrust) {
+      console.log(`Trusted new identity for ${targetId}/${targetDeviceId}`);
+    }
+
     if (!msg.bundle.signedPreKeySignature) {
       console.error("PreKeyBundle rejected: missing signedPreKeySignature");
       rl.prompt();
@@ -732,6 +755,27 @@ ws.on("message", (data) => {
   if (msg.type === "x3dh-init") {
     const remoteEphemeral = parsePublicKey(msg.ephemeralPublic);
     const remoteIdentity = parsePublicKey(msg.identityKey);
+
+    const trustResult = TrustedIdentityStore.checkAndTrust(
+      userId,
+      deviceId,
+      msg.from,
+      msg.fromDeviceId,
+      msg.identityKey
+    );
+
+    if (!trustResult.ok) {
+      console.error();
+      console.error("SECURITY WARNING: remote identity key changed!");
+      console.error(`${msg.from}/${msg.fromDeviceId} identityKey is different from trusted record.`);
+      console.error("X3DH init rejected. Use /trust-reset if this change is expected.");
+      rl.prompt();
+      return;
+    }
+
+    if (trustResult.firstTrust) {
+      console.log(`Trusted new identity for ${msg.from}/${msg.fromDeviceId}`);
+    }
 
     if (!msg.signature) {
       console.error("X3DH init rejected: missing signature");
@@ -865,6 +909,17 @@ rl.on("line", (line) => {
     clearLocalSession();
     resetInProgress = false;
     console.log("local session deleted");
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/trust-reset") {
+    TrustedIdentityStore.forget(userId, deviceId, targetId, targetDeviceId);
+    clearLocalSession();
+    resetInProgress = false;
+
+    console.log(`trusted identity for ${targetId}/${targetDeviceId} deleted`);
+    console.log("local session deleted, next message will trust the new identity");
     rl.prompt();
     return;
   }

@@ -818,5 +818,55 @@
     "text": "hello bob signed prekey",
     "timestamp": 1779532423343,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob trusted identity",
+    "timestamp": 1779704743821,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob trusted identity",
+    "timestamp": 1779704743825,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello after bob identity changed",
+    "timestamp": 1779704791607,
+    "messageNumber": 1
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello after bob identity changed",
+    "timestamp": 1779704842595,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello after bob identity changed",
+    "timestamp": 1779704842599,
+    "messageNumber": 0
   }
 ]
