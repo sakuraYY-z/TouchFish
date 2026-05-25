@@ -12,7 +12,8 @@ export class CryptoManager {
 
   static encrypt(
     plaintext: string,
-    sharedSecret: string
+    sharedSecret: string,
+    aad?: Buffer
   ) {
 
     const key =
@@ -27,6 +28,10 @@ export class CryptoManager {
         key,
         iv
       );
+
+    if (aad) {
+      cipher.setAAD(aad);
+    }
 
     let encrypted =
       cipher.update(
@@ -51,7 +56,8 @@ export class CryptoManager {
     encrypted: string,
     iv: string,
     tag: string,
-    sharedSecret: string
+    sharedSecret: string,
+    aad?: Buffer
   ) {
 
     const key =
@@ -63,6 +69,10 @@ export class CryptoManager {
         key,
         Buffer.from(iv, "base64")
       );
+
+    if (aad) {
+      decipher.setAAD(aad);
+    }
 
     decipher.setAuthTag(
       Buffer.from(tag, "base64")

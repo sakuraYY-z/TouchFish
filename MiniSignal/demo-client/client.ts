@@ -139,6 +139,29 @@ function createSessionFromRoot(
   saveSession();
 }
 
+function buildMessageAAD(input: {
+  from: string;
+  fromDeviceId: string;
+  target: string;
+  targetDeviceId: string;
+  messageNumber: number;
+  ratchetPublicKey: string | null;
+  previousSendCounter: number;
+}) {
+  return Buffer.from(
+    JSON.stringify({
+      from: input.from,
+      fromDeviceId: input.fromDeviceId,
+      target: input.target,
+      targetDeviceId: input.targetDeviceId,
+      messageNumber: input.messageNumber,
+      ratchetPublicKey: input.ratchetPublicKey ?? null,
+      previousSendCounter: input.previousSendCounter,
+    }),
+    "utf8"
+  );
+}
+
 function encryptForSend(plaintext: string) {
   if (!session) {
     throw new Error("session not established");
@@ -147,18 +170,36 @@ function encryptForSend(plaintext: string) {
   const chain = Buffer.from(session.sendChainKey, "base64");
   const { nextChainKey, messageKey } = nextMessageKey(chain);
 
+  const messageNumber = session.sendCounter;
+  const ratchetPublicKey = session.localRatchetPublicKey ?? null;
+  const previousSendCounter = session.previousSendCounter ?? 0;
+
+  const aad = buildMessageAAD({
+    from: userId,
+    fromDeviceId: deviceId,
+    target: targetId,
+    targetDeviceId,
+    messageNumber,
+    ratchetPublicKey,
+    previousSendCounter,
+  });
+
   const encrypted = CryptoManager.encrypt(
     plaintext,
-    messageKey.toString("base64")
+    messageKey.toString("base64"),
+    aad
   );
-
-  const messageNumber = session.sendCounter;
 
   session.sendCounter += 1;
   session.sendChainKey = nextChainKey.toString("base64");
   saveSession();
 
-  return { encrypted, messageNumber };
+  return {
+    encrypted,
+    messageNumber,
+    ratchetPublicKey,
+    previousSendCounter,
+  };
 }
 
 function messageId(
@@ -212,9 +253,12 @@ function skippedKeyId(ratchetPublicKey: string | null, messageNumber: number) {
 }
 
 function tryDecryptWithSkippedKey(
+  from: string,
+  fromDeviceId: string,
   messageNumber: number,
   payload: any,
-  remoteRatchetPublicKey: string | null
+  remoteRatchetPublicKey: string | null,
+  previousSendCounter: number
 ) {
   if (!session) {
     throw new Error("session not established");
@@ -227,11 +271,22 @@ function tryDecryptWithSkippedKey(
     return null;
   }
 
+  const aad = buildMessageAAD({
+    from,
+    fromDeviceId,
+    target: userId,
+    targetDeviceId: deviceId,
+    messageNumber,
+    ratchetPublicKey: remoteRatchetPublicKey,
+    previousSendCounter,
+  });
+
   const plaintext = CryptoManager.decrypt(
     payload.encrypted,
     payload.iv,
     payload.tag,
-    savedMessageKey
+    savedMessageKey,
+    aad
   );
 
   delete session.skippedMessageKeys[keyId];
@@ -341,7 +396,8 @@ function decryptIncoming(
   fromDeviceId: string,
   messageNumber: number,
   payload: any,
-  remoteRatchetPublicKey: string | null = null
+  remoteRatchetPublicKey: string | null = null,
+  previousSendCounter: number = 0
 ) {
   if (!session) {
     throw new Error("session not established");
@@ -366,9 +422,12 @@ function decryptIncoming(
    * 1. 如果是已经跳过保存过的旧消息，直接用 skipped key 解密。
    */
   const skippedPlaintext = tryDecryptWithSkippedKey(
+    from,
+    fromDeviceId,
     messageNumber,
     payload,
-    remoteRatchetPublicKey
+    remoteRatchetPublicKey,
+    previousSendCounter
   );
 
   if (skippedPlaintext !== null) {
@@ -402,11 +461,22 @@ function decryptIncoming(
   const chain = Buffer.from(session.recvChainKey, "base64");
   const { nextChainKey, messageKey } = nextMessageKey(chain);
 
+  const aad = buildMessageAAD({
+    from,
+    fromDeviceId,
+    target: userId,
+    targetDeviceId: deviceId,
+    messageNumber,
+    ratchetPublicKey: remoteRatchetPublicKey,
+    previousSendCounter,
+  });
+
   const plaintext = CryptoManager.decrypt(
     payload.encrypted,
     payload.iv,
     payload.tag,
-    messageKey.toString("base64")
+    messageKey.toString("base64"),
+    aad
   );
 
   session.recvCounter += 1;
@@ -432,7 +502,12 @@ function sendChat(line: string) {
     return;
   }
 
-  const { encrypted, messageNumber } = encryptForSend(line);
+  const {
+    encrypted,
+    messageNumber,
+    ratchetPublicKey,
+    previousSendCounter,
+  } = encryptForSend(line);
 
   ws.send(
   JSON.stringify({
@@ -441,8 +516,8 @@ function sendChat(line: string) {
     fromDeviceId: deviceId,
     target: targetId,
     targetDeviceId,
-    ratchetPublicKey: session?.localRatchetPublicKey ?? null,
-    previousSendCounter: session?.previousSendCounter ?? 0,
+    ratchetPublicKey,
+    previousSendCounter,
     messageNumber,
     payload: encrypted,
   })
@@ -836,7 +911,8 @@ ws.on("message", (data) => {
       msg.fromDeviceId,
       msg.messageNumber,
       msg.payload,
-      msg.ratchetPublicKey ?? null
+      msg.ratchetPublicKey ?? null,
+      Number(msg.previousSendCounter ?? 0)
       );
       
       MessageStore.append(targetId, targetDeviceId, userId, deviceId, {
@@ -873,7 +949,8 @@ ws.on("message", (data) => {
         item.fromDeviceId,
         item.messageNumber,
         item.payload,
-        item.ratchetPublicKey ?? null
+        item.ratchetPublicKey ?? null,
+        Number(item.previousSendCounter ?? 0)
       );
         
         MessageStore.append(targetId, targetDeviceId, userId, deviceId, {

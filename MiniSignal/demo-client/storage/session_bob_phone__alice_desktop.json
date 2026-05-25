@@ -4,18 +4,18 @@
   "localDeviceId": "phone",
   "remoteUserId": "alice",
   "remoteDeviceId": "desktop",
-  "rootKey": "UW0zzvlQItw4T3nu5T3Opc7Uuo3sVpImg9WaJiwTmX8=",
-  "sendChainKey": "uzpCSQedwi5S+ibFAj6XF1Bm0e+53lUBdARdCCWbowA=",
-  "recvChainKey": "6yUy4x7YvBAlLbId/WWxKsgSofwHLRSgYiwqBO5UGyU=",
+  "rootKey": "50fdCneADIxoroCSvYZVkyDIQCouycTRTIqaYfcnxGE=",
+  "sendChainKey": "tPlKl0oz47kd7zQhp0BnhcFMIOvrrVtraRvq5w2n1jI=",
+  "recvChainKey": "lrrvaNwYiCfe5Gf2Hof6isZ+t4C7l67uavXY/yuHB4g=",
   "sendCounter": 0,
-  "recvCounter": 2,
-  "localRatchetPrivateKey": "2AJAXMe9RR64AFzkGfCc7DETKJdHv2WIaxEaxosFNmk=",
-  "localRatchetPublicKey": "BYNTCKVDKzr+qoHQmNS5TcAt6zJDLeEHwsr7s4O4/lYJ",
-  "remoteRatchetPublicKey": "BZx+/ZjxA/RPPVWS42YDis32u+e+acuvbw+I20FawOlH",
-  "previousSendCounter": 0,
+  "recvCounter": 1,
+  "localRatchetPrivateKey": "SIbTcma24qzfinrIxTlpsewAK4KYWn3whaEvhmPVanA=",
+  "localRatchetPublicKey": "BfgD2Oi5GHNyo5/IHDqIfzh7WSFSR/CbnLSeixqRx8tE",
+  "remoteRatchetPublicKey": "BTIzpp2ZGTuv2SyNx2S44Mkov/syJ3ZMR2bUsYrImdJM",
+  "previousSendCounter": 1,
   "processedMessageIds": {
-    "alice:desktop:BZx+/ZjxA/RPPVWS42YDis32u+e+acuvbw+I20FawOlH:0": true,
-    "alice:desktop:BZx+/ZjxA/RPPVWS42YDis32u+e+acuvbw+I20FawOlH:1": true
+    "alice:desktop:BXjBWemn/6ZRcLlhTSNu6S2mfnBIoe9oHnj4Wnr4W49n:0": true,
+    "alice:desktop:BTIzpp2ZGTuv2SyNx2S44Mkov/syJ3ZMR2bUsYrImdJM:0": true
   },
   "skippedMessageKeys": {}
 }

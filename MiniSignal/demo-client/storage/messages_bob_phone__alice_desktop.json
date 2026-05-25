@@ -198,5 +198,25 @@
     "text": "hello alice 1",
     "timestamp": 1779530857893,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello alice aad",
+    "timestamp": 1779710927957,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "hello alice aad",
+    "timestamp": 1779710927960,
+    "messageNumber": 0
   }
 ]
