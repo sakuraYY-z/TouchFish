@@ -740,6 +740,28 @@ ws.on("message", (data) => {
     return;
   }
 
+  if (msg.type === "device-list") {
+    console.log(`Devices for ${msg.target}:`);
+
+    if (!msg.devices || msg.devices.length === 0) {
+      console.log("  no registered devices");
+      rl.prompt();
+      return;
+    }
+
+    for (const device of msg.devices) {
+      const status = device.online ? "online" : "offline";
+      const lastSeen = new Date(device.lastSeen).toLocaleString();
+
+      console.log(
+        `  - ${device.userId}/${device.deviceId} [${status}], lastSeen=${lastSeen}`
+      );
+    }
+
+    rl.prompt();
+    return;
+  }
+
   if (msg.type === "error") {
     console.log("server error:", msg.error);
     rl.prompt();
@@ -1124,6 +1146,20 @@ rl.on("line", (line) => {
   rl.prompt();
   return;
   }
+
+  if (text === "/devices") {
+    ws.send(
+      JSON.stringify({
+        type: "list-devices",
+        userId,
+        deviceId,
+        target: targetId,
+      })
+    );
+
+    return;
+  }
+
   if (text === "/pull") {
     ws.send(JSON.stringify({ type: "pull", userId, deviceId }));
     return;

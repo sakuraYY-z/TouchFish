@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import WebSocket, { WebSocketServer } from "ws";
 import { CipherMessage, RelayQueue } from "./relay";
 import { UserRegistry } from "./users";
@@ -21,6 +23,46 @@ const relay = new RelayQueue();
 
 const bundles = new Map<string, PreKeyBundle>();
 
+const storageDir = path.join(__dirname, "storage");
+const bundleStoragePath = path.join(storageDir, "prekey_bundles.json");
+
+function saveBundles() {
+  if (!fs.existsSync(storageDir)) {
+    fs.mkdirSync(storageDir, { recursive: true });
+  }
+
+  const objectData: Record<string, PreKeyBundle> = {};
+
+  for (const [key, bundle] of bundles.entries()) {
+    objectData[key] = bundle;
+  }
+
+  fs.writeFileSync(
+    bundleStoragePath,
+    JSON.stringify(objectData, null, 2),
+    "utf8"
+  );
+}
+
+function loadBundles() {
+  if (!fs.existsSync(bundleStoragePath)) {
+    return;
+  }
+
+  try {
+    const data = JSON.parse(fs.readFileSync(bundleStoragePath, "utf8"));
+
+    for (const key of Object.keys(data)) {
+      bundles.set(key, data[key]);
+    }
+
+    console.log(`prekey bundles loaded: ${bundles.size}`);
+  } catch {
+    console.log("failed to load prekey bundles, starting empty");
+    bundles.clear();
+  }
+}
+
 function deviceKey(userId: string, deviceId: string) {
   return `${userId}:${deviceId}`;
 }
@@ -30,6 +72,8 @@ function send(ws: WebSocket, payload: unknown) {
     ws.send(JSON.stringify(payload));
   }
 }
+
+loadBundles();
 
 console.log("MiniSignal Server Running: ws://localhost:8080");
 
@@ -69,6 +113,25 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    if (message.type === "list-devices") {
+      const target = String(message.target ?? message.userId);
+      const devices = users.getRegisteredDevices(target);
+
+      send(ws, {
+        type: "device-list",
+        target,
+        devices: devices.map((item) => ({
+          userId: item.userId,
+          deviceId: item.deviceId,
+          publicKey: item.publicKey ?? null,
+          lastSeen: item.lastSeen,
+          online: users.getDevice(item.userId, item.deviceId) ? true : false,
+        })),
+      });
+
+      return;
+    }
+
     if (message.type === "uploadPreKeyBundle") {
       const userId = String(message.userId);
       const deviceId = String(message.deviceId ?? "default");
@@ -105,6 +168,8 @@ wss.on("connection", (ws) => {
 
         bundles.set(key, existing);
       }
+
+      saveBundles();
 
       send(ws, {
         type: "uploadPreKeyBundle-ok",
@@ -151,6 +216,7 @@ wss.on("connection", (ws) => {
       };
 
       bundles.set(key, bundle);
+      saveBundles();
 
       if (selectedOneTimePreKey) {
         console.log(

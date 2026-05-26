@@ -1,0 +1,58 @@
+{
+  "bob:phone": {
+    "identityKey": "BQIMsm7ZvnjUx5NEmOywYMbtSk81oe+pCwvVYTPhU1tl",
+    "signedPreKeyId": 1,
+    "signedPreKey": "BbDTEa8OBIlq4DloWMyLzrhOGvtaRfeFx/FyX/e5dpZN",
+    "signedPreKeySignature": "0cO4QQSrT80PPs7SMPFbaRPHJyEUpqMbKQzaZympQEEiMOKXbKq2f1tuMYh567K/5FVroFbJ87wJBARlyF3ZAw==",
+    "oneTimePreKeys": [
+      {
+        "keyId": 2,
+        "publicKey": "BR47QnPSOnZkB4081sOPdxkpIIU3HP6X4bKi+l4KYiUi"
+      },
+      {
+        "keyId": 3,
+        "publicKey": "BVIDn1lDMbBAE06ARtP/rOHftrUleNlPpeyvVTbp1HdS"
+      },
+      {
+        "keyId": 4,
+        "publicKey": "BYKoDiEj6NW+PgnJqXngBcnSpVod6DKulWgfO97pVRgP"
+      },
+      {
+        "keyId": 5,
+        "publicKey": "BacIbT2tA4DnNh0DUn+drxxXcdDP0al9mnPAiwMaYK8z"
+      },
+      {
+        "keyId": 1,
+        "publicKey": "BRMXkvy7prtfnkF5Li+Z6WVNJVultoxqFFb4XdTWEFEQ"
+      }
+    ]
+  },
+  "alice:desktop": {
+    "identityKey": "BQKIvDUCNdqBwfnuiC+zF7c4DiAKaCzjDzwD/OI4qG1H",
+    "signedPreKeyId": 1,
+    "signedPreKey": "BbP9p1otu8LZhdpKn9wf3XZTa/MdashgCO9BzzSdVU1l",
+    "signedPreKeySignature": "4B7Qhqh61yhleIUulm6DQtPuvOkcFLknGXpE/xArOblSJrOR3JAfMgm87w8LQtXwg4OC1oixHrVHluAS/PyJAQ==",
+    "oneTimePreKeys": [
+      {
+        "keyId": 1,
+        "publicKey": "BTKTc6WluajJFW4wxdpLDVdKSxHv9ugEZq7dnGk/jgkE"
+      },
+      {
+        "keyId": 2,
+        "publicKey": "BdOYQ9FmjG/sXxNd988/+00fErJANe/ErZDXD6MPm0Bh"
+      },
+      {
+        "keyId": 3,
+        "publicKey": "BUfoMBzgBu8mmj1VWW7pzdjO2LSAdXG0kJrubIix7MRi"
+      },
+      {
+        "keyId": 4,
+        "publicKey": "BUDrPpw4ao6og2m1iWejMIjX65RRjAMBq50Ufb1kZkhu"
+      },
+      {
+        "keyId": 5,
+        "publicKey": "BXEFdS3juAbN4zZLaCBpQkHDml241MO0thU9zTMro402"
+      }
+    ]
+  }
+}

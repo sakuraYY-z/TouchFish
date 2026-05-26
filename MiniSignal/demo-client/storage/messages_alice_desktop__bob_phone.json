@@ -1308,5 +1308,25 @@
     "text": "offline message persist 2",
     "timestamp": 1779787459095,
     "messageNumber": 2
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob after server restart",
+    "timestamp": 1779787867694,
+    "messageNumber": 3
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob after server restart x3dh",
+    "timestamp": 1779788006770,
+    "messageNumber": 0
   }
 ]
