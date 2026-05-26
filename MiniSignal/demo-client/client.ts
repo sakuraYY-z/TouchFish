@@ -793,11 +793,15 @@ ws.on("message", (data) => {
 
     const remoteSignedPreKey = parsePublicKey(msg.bundle.signedPreKey);
       
-      const remoteOneTimePreKey = msg.bundle.oneTimePreKey
-        ? parsePublicKey(msg.bundle.oneTimePreKey)
-        : null;
+    const remoteOneTimePreKey = msg.bundle.oneTimePreKey
+      ? parsePublicKey(msg.bundle.oneTimePreKey.publicKey)
+      : null;
 
-      const result = X3DHManager.initiator(
+    const usedOneTimePreKeyId = msg.bundle.oneTimePreKey
+      ? Number(msg.bundle.oneTimePreKey.keyId)
+      : null;
+
+    const result = X3DHManager.initiator(
         identity.getPrivateKey(),
         remoteIdentity,
         remoteSignedPreKey,
@@ -825,7 +829,8 @@ ws.on("message", (data) => {
          ...x3dhInitPayload,
          identityKey: identity.getPublicKeyBase64(),
          signature: x3dhSignature,
-         usedOneTimePreKey: msg.bundle.oneTimePreKey ? true : false,
+         usedOneTimePreKey: usedOneTimePreKeyId !== null,
+         usedOneTimePreKeyId,
       })
     );
 
@@ -889,13 +894,24 @@ ws.on("message", (data) => {
 
     console.log("X3DH init signature verified");
 
+    const usedOneTimePreKeyId =
+      msg.usedOneTimePreKeyId !== null && msg.usedOneTimePreKeyId !== undefined
+        ? Number(msg.usedOneTimePreKeyId)
+        : null;
+
+    const oneTimePreKeyPrivate = msg.usedOneTimePreKey
+      ? preKeys.getOneTimePreKeyPrivate(usedOneTimePreKeyId)
+      : null;
+
     const rootKey = X3DHManager.responder(
       identity.getPrivateKey(),
       preKeys.getSignedPreKeyPrivate(),
-      msg.usedOneTimePreKey ? preKeys.getOneTimePreKeyPrivate() : null,
+      oneTimePreKeyPrivate,
       remoteEphemeral,
       remoteIdentity
     );
+
+    preKeys.consumeOneTimePreKey(usedOneTimePreKeyId);
 
     createSessionFromRoot(rootKey, msg.ratchetPublicKey ?? null);
 

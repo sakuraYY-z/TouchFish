@@ -2,11 +2,16 @@ import WebSocket, { WebSocketServer } from "ws";
 import { CipherMessage, RelayQueue } from "./relay";
 import { UserRegistry } from "./users";
 
+interface OneTimePreKeyPublic {
+  keyId: number;
+  publicKey: string;
+}
+
 interface PreKeyBundle {
   identityKey: string;
   signedPreKey: string;
   signedPreKeySignature: string;
-  oneTimePreKey: string | null;
+  oneTimePreKeys: OneTimePreKeyPublic[];
 }
 
 const wss = new WebSocketServer({ port: 8080 });
@@ -72,7 +77,32 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      bundles.set(deviceKey(userId, deviceId), message.bundle);
+      const key = deviceKey(userId, deviceId);
+      const existing = bundles.get(key);
+
+      if (!existing) {
+        bundles.set(key, message.bundle);
+      } else {
+        /**
+         * 不直接覆盖已有 bundle，避免 Bob 每次重启都把 oneTimePreKey 池重置为 1。
+         * 这里只补充服务器还没有的 oneTimePreKey。
+         */
+        const existingIds = new Set(
+          existing.oneTimePreKeys.map((item: any) => Number(item.keyId))
+        );
+
+        const newKeys = (message.bundle.oneTimePreKeys ?? []).filter(
+          (item: any) => !existingIds.has(Number(item.keyId))
+        );
+
+        existing.oneTimePreKeys.push(...newKeys);
+
+        existing.identityKey = message.bundle.identityKey;
+        existing.signedPreKey = message.bundle.signedPreKey;
+        existing.signedPreKeySignature = message.bundle.signedPreKeySignature;
+
+        bundles.set(key, existing);
+      }
 
       send(ws, {
         type: "uploadPreKeyBundle-ok",
@@ -80,7 +110,11 @@ wss.on("connection", (ws) => {
         deviceId,
       });
 
-      console.log(`${userId} (${deviceId}) uploaded bundle`);
+      console.log(
+        `${userId} (${deviceId}) uploaded bundle, oneTimePreKeys=${
+          bundles.get(key)?.oneTimePreKeys.length ?? 0
+        }`
+      );
       return;
     }
 
@@ -101,24 +135,26 @@ wss.on("connection", (ws) => {
       }
 
       /**
-       * OneTimePreKey 一次性消费：
-       * 1. 先把当前 bundle 返回给请求方
-       * 2. 如果里面有 oneTimePreKey，就在返回后从服务端移除
+       * 多 OneTimePreKey 池：
+       * 每次从数组里取出一个 oneTimePreKey，并从服务端删除。
        */
+      const selectedOneTimePreKey = bundle.oneTimePreKeys.shift() ?? null;
+
       const responseBundle = {
         identityKey: bundle.identityKey,
         signedPreKey: bundle.signedPreKey,
         signedPreKeySignature: bundle.signedPreKeySignature,
-        oneTimePreKey: bundle.oneTimePreKey,
+        oneTimePreKey: selectedOneTimePreKey,
       };
 
-      if (bundle.oneTimePreKey) {
-        bundles.set(key, {
-          ...bundle,
-          oneTimePreKey: null,
-        });
+      bundles.set(key, bundle);
 
-        console.log(`${target} (${targetDeviceId}) oneTimePreKey consumed`);
+      if (selectedOneTimePreKey) {
+        console.log(
+          `${target} (${targetDeviceId}) oneTimePreKey consumed: ${selectedOneTimePreKey.keyId}`
+        );
+      } else {
+        console.log(`${target} (${targetDeviceId}) has no oneTimePreKey left`);
       }
 
       send(ws, {
@@ -148,6 +184,10 @@ wss.on("connection", (ws) => {
         ratchetPublicKey: message.ratchetPublicKey ?? null,
         signature: message.signature,
         usedOneTimePreKey: Boolean(message.usedOneTimePreKey),
+        usedOneTimePreKeyId:
+          message.usedOneTimePreKeyId !== null && message.usedOneTimePreKeyId !== undefined
+            ? Number(message.usedOneTimePreKeyId)
+            : null,
       };
 
       if (target && target.ws.readyState === WebSocket.OPEN) {

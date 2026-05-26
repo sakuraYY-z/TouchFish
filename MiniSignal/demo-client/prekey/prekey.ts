@@ -1,27 +1,32 @@
-import {
-  PrivateKey
-} from "@signalapp/libsignal-client";
+import fs from "fs";
+import path from "path";
+import { PrivateKey } from "@signalapp/libsignal-client";
+
+interface StoredOneTimePreKey {
+  keyId: number;
+  privateKey: string;
+  publicKey: string;
+}
 
 export class PreKeyManager {
+  private identityKey: PrivateKey;
+  private signedPreKey: PrivateKey;
+  private oneTimePreKeys: StoredOneTimePreKey[];
 
-  identityKey: PrivateKey;
+  constructor(identityKey: PrivateKey) {
+    this.identityKey = identityKey;
+    this.signedPreKey = PrivateKey.generate();
+    this.oneTimePreKeys = [];
 
-  signedPreKey: PrivateKey;
+    for (let i = 1; i <= 5; i++) {
+      const key = PrivateKey.generate();
 
-  oneTimePreKey: PrivateKey;
-
-  constructor(
-    identityKey: PrivateKey
-  ) {
-
-    this.identityKey =
-      identityKey;
-
-    this.signedPreKey =
-      PrivateKey.generate();
-
-    this.oneTimePreKey =
-      PrivateKey.generate();
+      this.oneTimePreKeys.push({
+        keyId: i,
+        privateKey: Buffer.from(key.serialize()).toString("base64"),
+        publicKey: Buffer.from(key.getPublicKey().serialize()).toString("base64"),
+      });
+    }
   }
 
   getBundle() {
@@ -29,7 +34,7 @@ export class PreKeyManager {
       this.signedPreKey.getPublicKey().serialize()
     ).toString("base64");
 
-    const signature = this.identityKey.sign(
+    const signedPreKeySignature = this.identityKey.sign(
       Buffer.from(signedPreKeyPublicBase64, "utf8")
     );
 
@@ -40,11 +45,12 @@ export class PreKeyManager {
 
       signedPreKey: signedPreKeyPublicBase64,
 
-      signedPreKeySignature: Buffer.from(signature).toString("base64"),
+      signedPreKeySignature: Buffer.from(signedPreKeySignature).toString("base64"),
 
-      oneTimePreKey: Buffer.from(
-        this.oneTimePreKey.getPublicKey().serialize()
-      ).toString("base64"),
+      oneTimePreKeys: this.oneTimePreKeys.map((item) => ({
+        keyId: item.keyId,
+        publicKey: item.publicKey,
+      })),
     };
   }
 
@@ -52,7 +58,27 @@ export class PreKeyManager {
     return this.signedPreKey;
   }
 
-  getOneTimePreKeyPrivate() {
-    return this.oneTimePreKey;
+  getOneTimePreKeyPrivate(keyId: number | null | undefined) {
+    if (keyId === null || keyId === undefined) {
+      return null;
+    }
+
+    const item = this.oneTimePreKeys.find((key) => key.keyId === keyId);
+
+    if (!item) {
+      return null;
+    }
+
+    return PrivateKey.deserialize(Buffer.from(item.privateKey, "base64"));
+  }
+
+  consumeOneTimePreKey(keyId: number | null | undefined) {
+    if (keyId === null || keyId === undefined) {
+      return;
+    }
+
+    this.oneTimePreKeys = this.oneTimePreKeys.filter(
+      (item) => item.keyId !== keyId
+    );
   }
 }
