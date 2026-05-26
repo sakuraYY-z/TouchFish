@@ -8,21 +8,36 @@ interface StoredOneTimePreKey {
   publicKey: string;
 }
 
+interface StoredSignedPreKey {
+  keyId: number;
+  privateKey: string;
+  publicKey: string;
+}
+
 export class PreKeyManager {
   private identityKey: PrivateKey;
-  private signedPreKeyId: number;
-  private signedPreKey: PrivateKey;
+  private currentSignedPreKeyId: number;
+  private signedPreKeys: StoredSignedPreKey[];
   private oneTimePreKeys: StoredOneTimePreKey[];
   private storageDir: string;
   private storagePath: string;
 
   constructor(identityKey: PrivateKey) {
     this.identityKey = identityKey;
-    this.signedPreKeyId = 1;
-    this.signedPreKey = PrivateKey.generate();
     this.oneTimePreKeys = [];
     this.storageDir = path.join(process.cwd(), "prekey-storage");
     this.storagePath = path.join(this.storageDir, "prekeys.json");
+
+    const signedPreKey = PrivateKey.generate();
+
+    this.currentSignedPreKeyId = 1;
+    this.signedPreKeys = [
+      {
+        keyId: 1,
+        privateKey: Buffer.from(signedPreKey.serialize()).toString("base64"),
+        publicKey: Buffer.from(signedPreKey.getPublicKey().serialize()).toString("base64"),
+      },
+    ];
 
     for (let i = 1; i <= 5; i++) {
       const key = PrivateKey.generate();
@@ -35,13 +50,23 @@ export class PreKeyManager {
     }
   }
 
+  private getCurrentSignedPreKeyRecord() {
+    const record = this.signedPreKeys.find(
+      (item) => item.keyId === this.currentSignedPreKeyId
+    );
+
+    if (!record) {
+      throw new Error(`missing current signedPreKey ${this.currentSignedPreKeyId}`);
+    }
+
+    return record;
+  }
+
   getBundle() {
-    const signedPreKeyPublicBase64 = Buffer.from(
-      this.signedPreKey.getPublicKey().serialize()
-    ).toString("base64");
+    const signedPreKeyRecord = this.getCurrentSignedPreKeyRecord();
 
     const signedPreKeySignature = this.identityKey.sign(
-      Buffer.from(signedPreKeyPublicBase64, "utf8")
+      Buffer.from(signedPreKeyRecord.publicKey, "utf8")
     );
 
     return {
@@ -49,9 +74,9 @@ export class PreKeyManager {
         this.identityKey.getPublicKey().serialize()
       ).toString("base64"),
 
-      signedPreKeyId: this.signedPreKeyId,
+      signedPreKeyId: signedPreKeyRecord.keyId,
 
-      signedPreKey: signedPreKeyPublicBase64,
+      signedPreKey: signedPreKeyRecord.publicKey,
 
       signedPreKeySignature: Buffer.from(signedPreKeySignature).toString("base64"),
 
@@ -63,11 +88,15 @@ export class PreKeyManager {
   }
 
   getSignedPreKeyPrivate(keyId?: number | null) {
-    if (keyId !== undefined && keyId !== null && keyId !== this.signedPreKeyId) {
+    const targetKeyId = keyId ?? this.currentSignedPreKeyId;
+
+    const item = this.signedPreKeys.find((key) => key.keyId === targetKeyId);
+
+    if (!item) {
       return null;
     }
 
-    return this.signedPreKey;
+    return PrivateKey.deserialize(Buffer.from(item.privateKey, "base64"));
   }
 
   getOneTimePreKeyPrivate(keyId: number | null | undefined) {
@@ -129,8 +158,8 @@ export class PreKeyManager {
       this.storagePath,
       JSON.stringify(
         {
-          signedPreKeyId: this.signedPreKeyId,
-          signedPreKey: Buffer.from(this.signedPreKey.serialize()).toString("base64"),
+          currentSignedPreKeyId: this.currentSignedPreKeyId,
+          signedPreKeys: this.signedPreKeys,
           oneTimePreKeys: this.oneTimePreKeys,
         },
         null,
@@ -138,5 +167,41 @@ export class PreKeyManager {
       ),
       "utf8"
     );
+  }
+
+  rotateSignedPreKey() {
+    let maxKeyId = 0;
+
+    for (const item of this.signedPreKeys) {
+      if (item.keyId > maxKeyId) {
+        maxKeyId = item.keyId;
+      }
+    }
+
+    const nextKeyId = maxKeyId + 1;
+    const key = PrivateKey.generate();
+
+    this.signedPreKeys.push({
+      keyId: nextKeyId,
+      privateKey: Buffer.from(key.serialize()).toString("base64"),
+      publicKey: Buffer.from(key.getPublicKey().serialize()).toString("base64"),
+    });
+
+    this.currentSignedPreKeyId = nextKeyId;
+
+    /**
+     * 教学版：最多保留最近 3 个 signedPreKey 私钥。
+     * 真实系统会根据时间和未完成会话做更复杂的保留策略。
+     */
+    this.signedPreKeys = this.signedPreKeys
+      .sort((a, b) => b.keyId - a.keyId)
+      .slice(0, 3)
+      .sort((a, b) => a.keyId - b.keyId);
+
+    this.save();
+
+    console.log(`rotated signedPreKey to id=${nextKeyId}`);
+
+    return nextKeyId;
   }
 }

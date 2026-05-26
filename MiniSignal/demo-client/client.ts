@@ -72,6 +72,17 @@ function sendSessionResetRequest(reason: string) {
   );
 }
 
+function uploadPreKeyBundle() {
+  ws.send(
+    JSON.stringify({
+      type: "uploadPreKeyBundle",
+      userId,
+      deviceId,
+      bundle: preKeys.getBundle(),
+    })
+  );
+}
+
 function createSessionFromRoot(
   rootKeyBase64: string,
   remoteRatchetPublicKey: string | null = null
@@ -663,14 +674,7 @@ ws.on("open", () => {
     })
   );
 
-  ws.send(
-    JSON.stringify({
-      type: "uploadPreKeyBundle",
-      userId,
-      deviceId,
-      bundle: preKeys.getBundle(),
-    })
-  );
+  uploadPreKeyBundle();
 
   if (session) {
     console.log("session restored");
@@ -1079,6 +1083,22 @@ rl.on("line", (line) => {
 
     console.log(`trusted identity for ${targetId}/${targetDeviceId} deleted`);
     console.log("local session deleted, next message will trust the new identity");
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/rotate-spk") {
+    const newKeyId = preKeys.rotateSignedPreKey();
+
+    uploadPreKeyBundle();
+
+    clearLocalSession();
+    resetInProgress = false;
+
+    console.log(`signedPreKey rotated to id=${newKeyId}`);
+    console.log("uploaded new KeyBundle");
+    console.log("local session deleted, next message will rebuild X3DH session");
+
     rl.prompt();
     return;
   }

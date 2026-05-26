@@ -1228,5 +1228,45 @@
     "text": "hello bob signed prekey id",
     "timestamp": 1779784288226,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "Alice: hello bob spk 1",
+    "timestamp": 1779784659271,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "Alice: hello bob spk 1",
+    "timestamp": 1779784659277,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob spk 2",
+    "timestamp": 1779784718929,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob spk 2",
+    "timestamp": 1779784718935,
+    "messageNumber": 0
   }
 ]
