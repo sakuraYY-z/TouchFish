@@ -1268,5 +1268,45 @@
     "text": "hello bob spk 2",
     "timestamp": 1779784718935,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "offline message persist 1",
+    "timestamp": 1779787396917,
+    "messageNumber": 1
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "offline message persist 2",
+    "timestamp": 1779787413182,
+    "messageNumber": 2
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "offline message persist 1",
+    "timestamp": 1779787459092,
+    "messageNumber": 1
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "offline message persist 2",
+    "timestamp": 1779787459095,
+    "messageNumber": 2
   }
 ]
