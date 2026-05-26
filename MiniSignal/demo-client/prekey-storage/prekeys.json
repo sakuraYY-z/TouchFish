@@ -1,30 +1,31 @@
 {
-  "signedPreKey": "CFE9o71hRhBVdcvYNbCtaQq3NlgOzTX+XRKhDlhvBmY=",
+  "signedPreKeyId": 1,
+  "signedPreKey": "UKcTcIkjWyfft8VRJ21YYygpmNAV7LuXO1KFe9rnHm4=",
   "oneTimePreKeys": [
     {
       "keyId": 1,
-      "privateKey": "EEpPxmUrngg82qZF8Iqw+3va+bu54RUsowh0XmpW6Eo=",
-      "publicKey": "Baf5SX/QvE8IYOf+5CVujbsCQhCKLRj1UQ/zmW0RyE0G"
+      "privateKey": "cG76UVdoYPM4iXb3w3tlOEpsp0S5gaXKWS4Vj51gI3A=",
+      "publicKey": "BWYKAd1Wn+JeX+STMAOQntfgRLdmpnjBCRC7P5PtMpFe"
     },
     {
       "keyId": 2,
-      "privateKey": "UDGk4v8SPH92kWcynwQ7XULw7SCFzsMFXLy2xvXHqG0=",
-      "publicKey": "BRl+J8Zn+rG98N7k7ndAWsFx2QRSlBiLjdChTLjDObhY"
+      "privateKey": "KD2fIW+KnftaE7bzpF0ubMBBB+nBYrXuQ+Qi2dOIflk=",
+      "publicKey": "BUYB8geENbXsuyF4Wbzw1S6ebEd4GhyufapsAtPuNn1p"
     },
     {
       "keyId": 3,
-      "privateKey": "SMVqDr5CVMGKQ4vYdxfic9IkY3zB6kFuKw2UmHlXYW4=",
-      "publicKey": "BdKBQE+HDG6bOR8WhhDMBFcqiNZkxZ5pncoce1a9iiQP"
+      "privateKey": "YJ65lqmrDX71g+VtHjHflrUt5IoFsSGLPIw3HiETY2E=",
+      "publicKey": "BbT26vuqzbZBmJij/cP7WXRCOc7DT7Fre55ZY1FNOltL"
     },
     {
       "keyId": 4,
-      "privateKey": "oKQL318fdx4vuvl51/V66N9cGCxBckUx0PXbTm9WvXo=",
-      "publicKey": "BfAkHAFONwr/25HuCoGPiSu+qslxQOxwNqtfJaTOWAsz"
+      "privateKey": "YJS7tEANzGmvIf1gYZx8PwL2K9+cjSH1UFXhu9fGZmk=",
+      "publicKey": "BRLHx2fi+zWERJNxSuFf34vpkT4GG8b4mwgzlqNjlRF6"
     },
     {
       "keyId": 5,
-      "privateKey": "EAwnZG6C76rS9Y7rEyrVlXErEZs2Z5uAyMCDPW30cH0=",
-      "publicKey": "BYjWggSnW2tWZs+5UGs3ZutCqqMpSynI6zupcju4jhh7"
+      "privateKey": "8EMsanV4/C4m8EylX/aLqvP5lf5LuxE2JqY6mYHhans=",
+      "publicKey": "BacJaBf1EGh8Y9GiNfpGkyn66VQrUMEscPuCTCDuR24G"
     }
   ]
 }

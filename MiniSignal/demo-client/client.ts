@@ -832,6 +832,7 @@ ws.on("message", (data) => {
          signature: x3dhSignature,
          usedOneTimePreKey: usedOneTimePreKeyId !== null,
          usedOneTimePreKeyId,
+         usedSignedPreKeyId: Number(msg.bundle.signedPreKeyId ?? 1),
       })
     );
 
@@ -904,9 +905,18 @@ ws.on("message", (data) => {
       ? preKeys.getOneTimePreKeyPrivate(usedOneTimePreKeyId)
       : null;
 
+    const usedSignedPreKeyId = Number(msg.usedSignedPreKeyId ?? 1);
+    const signedPreKeyPrivate = preKeys.getSignedPreKeyPrivate(usedSignedPreKeyId);
+
+    if (!signedPreKeyPrivate) {
+      console.error(`X3DH init rejected: missing signedPreKey private key ${usedSignedPreKeyId}`);
+      rl.prompt();
+      return;
+    }
+
     const rootKey = X3DHManager.responder(
       identity.getPrivateKey(),
-      preKeys.getSignedPreKeyPrivate(),
+      signedPreKeyPrivate,
       oneTimePreKeyPrivate,
       remoteEphemeral,
       remoteIdentity

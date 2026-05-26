@@ -1,0 +1,20 @@
+{
+  "version": 3,
+  "localUserId": "bob",
+  "localDeviceId": "phone",
+  "remoteUserId": "alice",
+  "remoteDeviceId": "desktop",
+  "rootKey": "ScUeZHP0ZR6DPQQV5hmavWjz+Ijyxv1AsvR+ZbLZ2Iw=",
+  "sendChainKey": "QVg37p7O4jEs9hkSMwkSqGRkrpskiQCM5hIdTyiSGmo=",
+  "recvChainKey": "KcVPLU37vltV9cttHoXdygQaP1vIy/o9KO2usCKbDsg=",
+  "sendCounter": 0,
+  "recvCounter": 1,
+  "localRatchetPrivateKey": "INTpjYHnLqajmwzaWO45QtMG4V8irxZ+l4AwmPD7V0o=",
+  "localRatchetPublicKey": "BSDZaEkKmsaEchZIghcc4U82x1h+3IZQRzjr5NHPWAF8",
+  "remoteRatchetPublicKey": "Ber3mBcnC0T4YohY+A5HRzPmSRoszFb4GHC3IPgcHh4Q",
+  "previousSendCounter": 0,
+  "processedMessageIds": {
+    "alice:desktop:Ber3mBcnC0T4YohY+A5HRzPmSRoszFb4GHC3IPgcHh4Q:0": true
+  },
+  "skippedMessageKeys": {}
+}

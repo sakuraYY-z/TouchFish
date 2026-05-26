@@ -1208,5 +1208,25 @@
     "text": "hello prekey auto refill",
     "timestamp": 1779782285372,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob signed prekey id",
+    "timestamp": 1779784288221,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello bob signed prekey id",
+    "timestamp": 1779784288226,
+    "messageNumber": 0
   }
 ]

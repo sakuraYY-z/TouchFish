@@ -9,6 +9,7 @@ interface OneTimePreKeyPublic {
 
 interface PreKeyBundle {
   identityKey: string;
+  signedPreKeyId: number;
   signedPreKey: string;
   signedPreKeySignature: string;
   oneTimePreKeys: OneTimePreKeyPublic[];
@@ -98,6 +99,7 @@ wss.on("connection", (ws) => {
         existing.oneTimePreKeys.push(...newKeys);
 
         existing.identityKey = message.bundle.identityKey;
+        existing.signedPreKeyId = Number(message.bundle.signedPreKeyId ?? existing.signedPreKeyId ?? 1);
         existing.signedPreKey = message.bundle.signedPreKey;
         existing.signedPreKeySignature = message.bundle.signedPreKeySignature;
 
@@ -142,6 +144,7 @@ wss.on("connection", (ws) => {
 
       const responseBundle = {
         identityKey: bundle.identityKey,
+        signedPreKeyId: bundle.signedPreKeyId,
         signedPreKey: bundle.signedPreKey,
         signedPreKeySignature: bundle.signedPreKeySignature,
         oneTimePreKey: selectedOneTimePreKey,
@@ -188,6 +191,7 @@ wss.on("connection", (ws) => {
           message.usedOneTimePreKeyId !== null && message.usedOneTimePreKeyId !== undefined
             ? Number(message.usedOneTimePreKeyId)
             : null,
+        usedSignedPreKeyId: Number(message.usedSignedPreKeyId ?? 1),
       };
 
       if (target && target.ws.readyState === WebSocket.OPEN) {

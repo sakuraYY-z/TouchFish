@@ -1,6 +1,6 @@
+import { PrivateKey } from "@signalapp/libsignal-client";
 import fs from "fs";
 import path from "path";
-import { PrivateKey } from "@signalapp/libsignal-client";
 
 interface StoredOneTimePreKey {
   keyId: number;
@@ -10,6 +10,7 @@ interface StoredOneTimePreKey {
 
 export class PreKeyManager {
   private identityKey: PrivateKey;
+  private signedPreKeyId: number;
   private signedPreKey: PrivateKey;
   private oneTimePreKeys: StoredOneTimePreKey[];
   private storageDir: string;
@@ -17,6 +18,7 @@ export class PreKeyManager {
 
   constructor(identityKey: PrivateKey) {
     this.identityKey = identityKey;
+    this.signedPreKeyId = 1;
     this.signedPreKey = PrivateKey.generate();
     this.oneTimePreKeys = [];
     this.storageDir = path.join(process.cwd(), "prekey-storage");
@@ -47,6 +49,8 @@ export class PreKeyManager {
         this.identityKey.getPublicKey().serialize()
       ).toString("base64"),
 
+      signedPreKeyId: this.signedPreKeyId,
+
       signedPreKey: signedPreKeyPublicBase64,
 
       signedPreKeySignature: Buffer.from(signedPreKeySignature).toString("base64"),
@@ -58,7 +62,11 @@ export class PreKeyManager {
     };
   }
 
-  getSignedPreKeyPrivate() {
+  getSignedPreKeyPrivate(keyId?: number | null) {
+    if (keyId !== undefined && keyId !== null && keyId !== this.signedPreKeyId) {
+      return null;
+    }
+
     return this.signedPreKey;
   }
 
@@ -121,6 +129,7 @@ export class PreKeyManager {
       this.storagePath,
       JSON.stringify(
         {
+          signedPreKeyId: this.signedPreKeyId,
           signedPreKey: Buffer.from(this.signedPreKey.serialize()).toString("base64"),
           oneTimePreKeys: this.oneTimePreKeys,
         },
