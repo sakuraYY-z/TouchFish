@@ -12,11 +12,15 @@ export class PreKeyManager {
   private identityKey: PrivateKey;
   private signedPreKey: PrivateKey;
   private oneTimePreKeys: StoredOneTimePreKey[];
+  private storageDir: string;
+  private storagePath: string;
 
   constructor(identityKey: PrivateKey) {
     this.identityKey = identityKey;
     this.signedPreKey = PrivateKey.generate();
     this.oneTimePreKeys = [];
+    this.storageDir = path.join(process.cwd(), "prekey-storage");
+    this.storagePath = path.join(this.storageDir, "prekeys.json");
 
     for (let i = 1; i <= 5; i++) {
       const key = PrivateKey.generate();
@@ -79,6 +83,51 @@ export class PreKeyManager {
 
     this.oneTimePreKeys = this.oneTimePreKeys.filter(
       (item) => item.keyId !== keyId
+    );
+  }
+
+  ensureOneTimePreKeys(targetCount = 5) {
+    let maxKeyId = 0;
+
+    for (const item of this.oneTimePreKeys) {
+      if (item.keyId > maxKeyId) {
+        maxKeyId = item.keyId;
+      }
+    }
+
+    while (this.oneTimePreKeys.length < targetCount) {
+      maxKeyId += 1;
+
+      const key = PrivateKey.generate();
+
+      this.oneTimePreKeys.push({
+        keyId: maxKeyId,
+        privateKey: Buffer.from(key.serialize()).toString("base64"),
+        publicKey: Buffer.from(key.getPublicKey().serialize()).toString("base64"),
+      });
+
+      console.log(`generated new oneTimePreKey: ${maxKeyId}`);
+    }
+
+    this.save();
+  }
+
+  private save() {
+    if (!fs.existsSync(this.storageDir)) {
+      fs.mkdirSync(this.storageDir, { recursive: true });
+    }
+
+    fs.writeFileSync(
+      this.storagePath,
+      JSON.stringify(
+        {
+          signedPreKey: Buffer.from(this.signedPreKey.serialize()).toString("base64"),
+          oneTimePreKeys: this.oneTimePreKeys,
+        },
+        null,
+        2
+      ),
+      "utf8"
     );
   }
 }

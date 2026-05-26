@@ -8,9 +8,9 @@ import { MessageStore } from "./message/messageStore";
 import { PreKeyManager } from "./prekey/prekey";
 import { DHRatchetManager } from "./session/dhRatchet";
 import {
-  MiniSessionState,
-  deriveDirectionalChains,
-  nextMessageKey,
+    MiniSessionState,
+    deriveDirectionalChains,
+    nextMessageKey,
 } from "./session/sessionState";
 import { SessionStore } from "./session/sessionStore";
 import { X3DHManager } from "./session/x3dh";
@@ -28,6 +28,7 @@ if (!userId || !deviceId || !targetId || !targetDeviceId) {
 
 const identity = new IdentityManager(userId, deviceId);
 const preKeys = new PreKeyManager(identity.getPrivateKey());
+preKeys.ensureOneTimePreKeys(5);
 
 let session: MiniSessionState | null = SessionStore.load(
   userId,

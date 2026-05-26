@@ -1138,5 +1138,75 @@
     "text": "hello bob prekey pool 2",
     "timestamp": 1779781748236,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "1",
+    "timestamp": 1779782228763,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "1",
+    "timestamp": 1779782228769,
+    "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "2",
+    "timestamp": 1779782231548,
+    "messageNumber": 1
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "2",
+    "timestamp": 1779782231551,
+    "messageNumber": 1
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "3",
+    "timestamp": 1779782233348,
+    "messageNumber": 2
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "3",
+    "timestamp": 1779782233350,
+    "messageNumber": 2
+  },
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "bob",
+    "toDeviceId": "phone",
+    "text": "hello prekey auto refill",
+    "timestamp": 1779782285372,
+    "messageNumber": 0
   }
 ]

@@ -1,0 +1,30 @@
+{
+  "signedPreKey": "CFE9o71hRhBVdcvYNbCtaQq3NlgOzTX+XRKhDlhvBmY=",
+  "oneTimePreKeys": [
+    {
+      "keyId": 1,
+      "privateKey": "EEpPxmUrngg82qZF8Iqw+3va+bu54RUsowh0XmpW6Eo=",
+      "publicKey": "Baf5SX/QvE8IYOf+5CVujbsCQhCKLRj1UQ/zmW0RyE0G"
+    },
+    {
+      "keyId": 2,
+      "privateKey": "UDGk4v8SPH92kWcynwQ7XULw7SCFzsMFXLy2xvXHqG0=",
+      "publicKey": "BRl+J8Zn+rG98N7k7ndAWsFx2QRSlBiLjdChTLjDObhY"
+    },
+    {
+      "keyId": 3,
+      "privateKey": "SMVqDr5CVMGKQ4vYdxfic9IkY3zB6kFuKw2UmHlXYW4=",
+      "publicKey": "BdKBQE+HDG6bOR8WhhDMBFcqiNZkxZ5pncoce1a9iiQP"
+    },
+    {
+      "keyId": 4,
+      "privateKey": "oKQL318fdx4vuvl51/V66N9cGCxBckUx0PXbTm9WvXo=",
+      "publicKey": "BfAkHAFONwr/25HuCoGPiSu+qslxQOxwNqtfJaTOWAsz"
+    },
+    {
+      "keyId": 5,
+      "privateKey": "EAwnZG6C76rS9Y7rEyrVlXErEZs2Z5uAyMCDPW30cH0=",
+      "publicKey": "BYjWggSnW2tWZs+5UGs3ZutCqqMpSynI6zupcju4jhh7"
+    }
+  ]
+}
