@@ -30,8 +30,8 @@
   "alice:desktop": {
     "identityKey": "BQKIvDUCNdqBwfnuiC+zF7c4DiAKaCzjDzwD/OI4qG1H",
     "signedPreKeyId": 1,
-    "signedPreKey": "BbP9p1otu8LZhdpKn9wf3XZTa/MdashgCO9BzzSdVU1l",
-    "signedPreKeySignature": "4B7Qhqh61yhleIUulm6DQtPuvOkcFLknGXpE/xArOblSJrOR3JAfMgm87w8LQtXwg4OC1oixHrVHluAS/PyJAQ==",
+    "signedPreKey": "Bc1eGLyN33Ch6fUKuhfabq7fBBIGxz3s9zzf4JB63BEp",
+    "signedPreKeySignature": "1doZfa9bCQFoJu6oOT1znF0JxSg3q4iv0PtYszPwIAW+z8jgX2QYLKEPtWV0jJzCMRD2dSTnY5g6Q3f27yzDAg==",
     "oneTimePreKeys": [
       {
         "keyId": 1,

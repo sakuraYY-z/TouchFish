@@ -14,6 +14,7 @@ import {
 } from "./session/sessionState";
 import { SessionStore } from "./session/sessionStore";
 import { X3DHManager } from "./session/x3dh";
+import { ContactStore } from "./contact/contactStore";
 
 
 const userId = process.argv[2];
@@ -1145,6 +1146,88 @@ rl.on("line", (line) => {
 
   rl.prompt();
   return;
+  }
+
+  if (text === "/contacts") {
+    const contacts = ContactStore.list(userId, deviceId);
+
+    if (contacts.length === 0) {
+      console.log("no contacts");
+      rl.prompt();
+      return;
+    }
+
+    console.log("===== CONTACTS =====");
+
+    for (const contact of contacts) {
+      const time = new Date(contact.addedAt).toLocaleString();
+
+      console.log(
+        `- ${contact.userId}/${contact.deviceId}, addedAt=${time}`
+      );
+    }
+
+    console.log("====================");
+    rl.prompt();
+    return;
+  }
+
+  if (text.startsWith("/add-contact ")) {
+    const parts = text.split(/\s+/);
+
+    if (parts.length < 3) {
+      console.log("usage: /add-contact <userId> <deviceId>");
+      rl.prompt();
+      return;
+    }
+
+    const remoteUserId = parts[1];
+    const remoteDeviceId = parts[2];
+
+    const added = ContactStore.add(
+      userId,
+      deviceId,
+      remoteUserId,
+      remoteDeviceId
+    );
+
+    if (added) {
+      console.log(`contact added: ${remoteUserId}/${remoteDeviceId}`);
+    } else {
+      console.log(`contact already exists: ${remoteUserId}/${remoteDeviceId}`);
+    }
+
+    rl.prompt();
+    return;
+  }
+
+  if (text.startsWith("/remove-contact ")) {
+    const parts = text.split(/\s+/);
+
+    if (parts.length < 3) {
+      console.log("usage: /remove-contact <userId> <deviceId>");
+      rl.prompt();
+      return;
+    }
+
+    const remoteUserId = parts[1];
+    const remoteDeviceId = parts[2];
+
+    const removed = ContactStore.remove(
+      userId,
+      deviceId,
+      remoteUserId,
+      remoteDeviceId
+    );
+
+    if (removed) {
+      console.log(`contact removed: ${remoteUserId}/${remoteDeviceId}`);
+    } else {
+      console.log(`contact not found: ${remoteUserId}/${remoteDeviceId}`);
+    }
+
+    rl.prompt();
+    return;
   }
 
   if (text === "/devices") {
