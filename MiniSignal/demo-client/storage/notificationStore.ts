@@ -7,14 +7,15 @@ export interface NotificationItem {
   fromDeviceId: string;
   to: string;
   toDeviceId: string;
-  messageNumber: number;
+  type: "x3dh-init" | "message" | "offline-message" | "session-reset";
+  messageNumber?: number;
   timestamp: number;
   read: boolean;
   note: string;
 }
 
 export class NotificationStore {
-  private static storageDir = path.join(__dirname);
+  private static storageDir = __dirname;
 
   private static filePath(userId: string, deviceId: string) {
     return path.join(

@@ -6,6 +6,7 @@ import { CryptoManager } from "./crypto/crypto";
 import { IdentityManager } from "./identity/identity";
 import { TrustedIdentityStore } from "./identity/trustedIdentityStore";
 import { MessageStore } from "./message/messageStore";
+import { NotificationStore } from "./storage/notificationStore";
 import { PreKeyManager } from "./prekey/prekey";
 import { DHRatchetManager } from "./session/dhRatchet";
 import {
@@ -21,6 +22,39 @@ const deviceId = process.argv[3];
 
 let targetId = process.argv[4];
 let targetDeviceId = process.argv[5];
+
+function isCurrentConversation(remoteUserId: string, remoteDeviceId: string) {
+  return remoteUserId === targetId && remoteDeviceId === targetDeviceId;
+}
+
+function addNotification(input: {
+  from: string;
+  fromDeviceId: string;
+  type: "x3dh-init" | "message" | "offline-message" | "session-reset";
+  messageNumber?: number;
+  note: string;
+}) {
+  const id = [
+    input.type,
+    input.from,
+    input.fromDeviceId,
+    input.messageNumber ?? "none",
+    Date.now(),
+  ].join(":");
+
+  NotificationStore.add(userId, deviceId, {
+    id,
+    from: input.from,
+    fromDeviceId: input.fromDeviceId,
+    to: userId,
+    toDeviceId: deviceId,
+    type: input.type,
+    messageNumber: input.messageNumber,
+    timestamp: Date.now(),
+    read: false,
+    note: input.note,
+  });
+}
 
 if (!userId || !deviceId || !targetId || !targetDeviceId) {
   console.log("usage: npx ts-node client.ts alice desktop bob phone");
@@ -740,7 +774,15 @@ ws.on("message", (data) => {
       `Session reset requested by ${msg.from}/${msg.fromDeviceId}: ${msg.reason}`
     );
 
-    switchCurrentTarget(msg.from, msg.fromDeviceId);
+    if (!isCurrentConversation(msg.from, msg.fromDeviceId)) {
+      addNotification({
+        from: msg.from,
+        fromDeviceId: msg.fromDeviceId,
+        type: "session-reset",
+        note: `非当前会话请求重置 session: ${msg.reason}`,
+      });
+    }
+
     clearSessionWith(msg.from, msg.fromDeviceId);
     resetInProgress = false;
 
@@ -765,7 +807,15 @@ ws.on("message", (data) => {
     console.log();
     console.log(`Session reset confirmed by ${msg.from}/${msg.fromDeviceId}`);
 
-    switchCurrentTarget(msg.from, msg.fromDeviceId);
+    if (!isCurrentConversation(msg.from, msg.fromDeviceId)) {
+      addNotification({
+        from: msg.from,
+        fromDeviceId: msg.fromDeviceId,
+        type: "session-reset",
+        note: "非当前会话 session reset 已确认",
+      });
+    }
+
     clearSessionWith(msg.from, msg.fromDeviceId);
     resetInProgress = false;
 
@@ -922,16 +972,17 @@ ws.on("message", (data) => {
   }
 
   if (msg.type === "x3dh-init") {
-    const oldTargetId = targetId;
-    const oldTargetDeviceId = targetDeviceId;
+    if (!isCurrentConversation(msg.from, msg.fromDeviceId)) {
+      addNotification({
+        from: msg.from,
+        fromDeviceId: msg.fromDeviceId,
+        type: "x3dh-init",
+        note: "非当前会话请求建立 X3DH 会话",
+      });
 
-    const isCurrentConversation =
-      msg.from === oldTargetId && msg.fromDeviceId === oldTargetDeviceId;
-
-    if (!isCurrentConversation) {
       console.log();
       console.log(
-        `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 请求建立会话。当前会话仍然是 ${oldTargetId}/${oldTargetDeviceId}。`
+        `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 请求建立会话。当前会话仍然是 ${targetId}/${targetDeviceId}。`
       );
       console.log(
         `输入 /switch ${msg.from} ${msg.fromDeviceId} 后，可以切换到该会话。`
@@ -1042,10 +1093,15 @@ ws.on("message", (data) => {
   }
 
   if (msg.type === "message") {
-    const isCurrentConversation =
-      msg.from === targetId && msg.fromDeviceId === targetDeviceId;
+    if (!isCurrentConversation(msg.from, msg.fromDeviceId)) {
+      addNotification({
+        from: msg.from,
+        fromDeviceId: msg.fromDeviceId,
+        type: "message",
+        messageNumber: msg.messageNumber,
+        note: "非当前会话收到一条新消息，未自动解密",
+      });
 
-    if (!isCurrentConversation) {
       console.log();
       console.log(
         `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 发来一条消息。当前会话仍然是 ${targetId}/${targetDeviceId}。`
@@ -1098,13 +1154,19 @@ ws.on("message", (data) => {
 
   if (msg.type === "pull-result") {
     for (const item of msg.messages ?? []) {
-      const isCurrentConversation =
-        item.from === targetId && item.fromDeviceId === targetDeviceId;
+      if (!isCurrentConversation(item.from, item.fromDeviceId)) {
+        addNotification({
+          from: item.from,
+          fromDeviceId: item.fromDeviceId,
+          type: "offline-message",
+          messageNumber: item.messageNumber,
+          note: "非当前会话有一条离线消息，未自动解密",
+        });
 
-      if (!isCurrentConversation) {
         console.log(
           `[非当前会话提醒] ${item.from}/${item.fromDeviceId} 有一条离线消息。当前会话仍然是 ${targetId}/${targetDeviceId}。`
         );
+
         continue;
       }
 
@@ -1259,6 +1321,39 @@ rl.on("line", (line) => {
 
   rl.prompt();
   return;
+  }
+
+  if (text === "/notifications") {
+    const items = NotificationStore.unread(userId, deviceId);
+
+    if (items.length === 0) {
+      console.log("no unread notifications");
+      rl.prompt();
+      return;
+    }
+
+    console.log("===== UNREAD NOTIFICATIONS =====");
+
+    for (const item of items) {
+      const time = new Date(item.timestamp).toLocaleString();
+      const numberText =
+        item.messageNumber === undefined ? "" : `, messageNumber=${item.messageNumber}`;
+
+      console.log(
+        `[${time}] ${item.type}: ${item.from}/${item.fromDeviceId}${numberText} - ${item.note}`
+      );
+    }
+
+    console.log("===============================");
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/read-notifications") {
+    NotificationStore.markAllRead(userId, deviceId);
+    console.log("all notifications marked as read");
+    rl.prompt();
+    return;
   }
 
   if (text === "/contacts") {
