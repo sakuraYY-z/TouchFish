@@ -98,6 +98,28 @@ function switchCurrentTarget(remoteUserId: string, remoteDeviceId: string) {
   }
 }
 
+function runWithTemporaryTarget(
+  remoteUserId: string,
+  remoteDeviceId: string,
+  work: () => void
+) {
+  const oldTargetId = targetId;
+  const oldTargetDeviceId = targetDeviceId;
+  const oldSession = session;
+
+  targetId = remoteUserId;
+  targetDeviceId = remoteDeviceId;
+  session = SessionStore.load(userId, deviceId, targetId, targetDeviceId);
+
+  try {
+    work();
+  } finally {
+    targetId = oldTargetId;
+    targetDeviceId = oldTargetDeviceId;
+    session = oldSession;
+  }
+}
+
 loadCurrentSession();
 
 let pendingMessage: string | null = null;
@@ -487,6 +509,15 @@ function decryptIncoming(
   remoteRatchetPublicKey: string | null = null,
   previousSendCounter: number = 0
 ) {
+  if (!session) {
+    session = SessionStore.load(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId
+    );
+  }
+
   if (!session) {
     throw new Error("session not established");
   }
@@ -972,12 +1003,17 @@ ws.on("message", (data) => {
   }
 
   if (msg.type === "x3dh-init") {
-    if (!isCurrentConversation(msg.from, msg.fromDeviceId)) {
+    const wasCurrentConversation = isCurrentConversation(
+      msg.from,
+      msg.fromDeviceId
+    );
+
+    if (!wasCurrentConversation) {
       addNotification({
         from: msg.from,
         fromDeviceId: msg.fromDeviceId,
         type: "x3dh-init",
-        note: "非当前会话请求建立 X3DH 会话",
+        note: "非当前会话请求建立 X3DH 会话，已在后台保存 session",
       });
 
       console.log();
@@ -985,109 +1021,114 @@ ws.on("message", (data) => {
         `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 请求建立会话。当前会话仍然是 ${targetId}/${targetDeviceId}。`
       );
       console.log(
-        `输入 /switch ${msg.from} ${msg.fromDeviceId} 后，可以切换到该会话。`
+        `已在后台保存 ${msg.from}/${msg.fromDeviceId} 的 session，输入 /switch ${msg.from} ${msg.fromDeviceId} 后可以继续聊天。`
+      );
+    }
+
+    runWithTemporaryTarget(msg.from, msg.fromDeviceId, () => {
+      const remoteEphemeral = parsePublicKey(msg.ephemeralPublic);
+      const remoteIdentity = parsePublicKey(msg.identityKey);
+
+      const trustResult = TrustedIdentityStore.checkAndTrust(
+        userId,
+        deviceId,
+        msg.from,
+        msg.fromDeviceId,
+        msg.identityKey
       );
 
-      rl.prompt();
-      return;
-    }
+      if (!trustResult.ok) {
+        console.error();
+        console.error("SECURITY WARNING: remote identity key changed!");
+        console.error(
+          `${msg.from}/${msg.fromDeviceId} identityKey is different from trusted record.`
+        );
+        console.error("X3DH init rejected. Use /trust-reset if this change is expected.");
+        return;
+      }
 
-    switchCurrentTarget(msg.from, msg.fromDeviceId);
+      if (trustResult.firstTrust) {
+        console.log(`Trusted new identity for ${msg.from}/${msg.fromDeviceId}`);
+      }
 
-    const remoteEphemeral = parsePublicKey(msg.ephemeralPublic);
-    const remoteIdentity = parsePublicKey(msg.identityKey);
+      if (!msg.signature) {
+        console.error("X3DH init rejected: missing signature");
+        return;
+      }
 
-    const trustResult = TrustedIdentityStore.checkAndTrust(
-      userId,
-      deviceId,
-      msg.from,
-      msg.fromDeviceId,
-      msg.identityKey
-    );
+      const signatureValid = verifyX3DHInitSignature({
+        identityPublicKey: remoteIdentity,
+        from: msg.from,
+        fromDeviceId: msg.fromDeviceId,
+        target: msg.target,
+        targetDeviceId: msg.targetDeviceId,
+        ephemeralPublic: msg.ephemeralPublic,
+        ratchetPublicKey: msg.ratchetPublicKey ?? null,
+        signature: msg.signature,
+      });
 
-    if (!trustResult.ok) {
-      console.error();
-      console.error("SECURITY WARNING: remote identity key changed!");
-      console.error(`${msg.from}/${msg.fromDeviceId} identityKey is different from trusted record.`);
-      console.error("X3DH init rejected. Use /trust-reset if this change is expected.");
-      rl.prompt();
-      return;
-    }
+      if (!signatureValid) {
+        console.error("X3DH init rejected: invalid signature");
+        return;
+      }
 
-    if (trustResult.firstTrust) {
-      console.log(`Trusted new identity for ${msg.from}/${msg.fromDeviceId}`);
-    }
+      console.log("X3DH init signature verified");
 
-    if (!msg.signature) {
-      console.error("X3DH init rejected: missing signature");
-      rl.prompt();
-      return;
-    }
+      const signedPreKeyId = Number(msg.usedSignedPreKeyId ?? 1);
+      const usedOneTimePreKeyId =
+        msg.usedOneTimePreKeyId === undefined || msg.usedOneTimePreKeyId === null
+          ? null
+          : Number(msg.usedOneTimePreKeyId);
 
-    const signatureValid = verifyX3DHInitSignature({
-      identityPublicKey: remoteIdentity,
-      from: msg.from,
-      fromDeviceId: msg.fromDeviceId,
-      target: msg.target,
-      targetDeviceId: msg.targetDeviceId,
-      ephemeralPublic: msg.ephemeralPublic,
-      ratchetPublicKey: msg.ratchetPublicKey ?? null,
-      signature: msg.signature,
+      const signedPreKeyPrivate = preKeys.getSignedPreKeyPrivate(signedPreKeyId);
+
+      const oneTimePreKeyPrivate =
+        usedOneTimePreKeyId === null
+          ? null
+          : preKeys.getOneTimePreKeyPrivate(usedOneTimePreKeyId);
+
+      if (msg.usedOneTimePreKey && !oneTimePreKeyPrivate) {
+        console.error(
+          `X3DH init rejected: missing oneTimePreKey private key ${usedOneTimePreKeyId}`
+        );
+        return;
+      }
+
+      if (!signedPreKeyPrivate) {
+        console.error(
+          `X3DH init rejected: missing signedPreKey private key ${signedPreKeyId}`
+        );
+        return;
+      }
+
+      console.log(
+        `X3DH responder keys: signedPreKeyId=${signedPreKeyId}, oneTimePreKeyId=${usedOneTimePreKeyId}, usedOneTimePreKey=${usedOneTimePreKeyId !== null}, hasOneTimePrivate=${!!oneTimePreKeyPrivate}`
+      );
+
+      const rootKey = X3DHManager.responder(
+        identity.getPrivateKey(),
+        signedPreKeyPrivate,
+        oneTimePreKeyPrivate,
+        remoteEphemeral,
+        remoteIdentity
+      );
+
+      createSessionFromRoot(rootKey, msg.ratchetPublicKey ?? null);
+
+      preKeys.consumeOneTimePreKey(usedOneTimePreKeyId);
+
+      console.log("X3DH responder session established");
     });
 
-    if (!signatureValid) {
-      console.error("X3DH init rejected: invalid identity signature");
-      rl.prompt();
-      return;
-    }
-
-    console.log("X3DH init signature verified");
-
-    const usedOneTimePreKeyId =
-      msg.usedOneTimePreKeyId !== null && msg.usedOneTimePreKeyId !== undefined
-        ? Number(msg.usedOneTimePreKeyId)
-        : null;
-
-    const oneTimePreKeyPrivate = msg.usedOneTimePreKey
-      ? preKeys.getOneTimePreKeyPrivate(usedOneTimePreKeyId)
-      : null;
-
-    if (msg.usedOneTimePreKey && !oneTimePreKeyPrivate) {
-      console.error(
-        `X3DH init rejected: missing oneTimePreKey private key ${usedOneTimePreKeyId}`
+    if (wasCurrentConversation) {
+      session = SessionStore.load(
+        userId,
+        deviceId,
+        targetId,
+        targetDeviceId
       );
-      rl.prompt();
-      return;
     }
 
-    const usedSignedPreKeyId = Number(msg.usedSignedPreKeyId ?? 1);
-    const signedPreKeyPrivate = preKeys.getSignedPreKeyPrivate(usedSignedPreKeyId);
-
-    if (!signedPreKeyPrivate) {
-      console.error(
-        `X3DH init rejected: missing signedPreKey private key ${usedOneTimePreKeyId}`
-      );
-      rl.prompt();
-      return;
-    }
-
-    console.log(
-      `X3DH responder keys: signedPreKeyId=${usedSignedPreKeyId}, oneTimePreKeyId=${usedOneTimePreKeyId}, usedOneTimePreKey=${Boolean(msg.usedOneTimePreKey)}, hasOneTimePrivate=${Boolean(oneTimePreKeyPrivate)}`
-    );
-
-    const rootKey = X3DHManager.responder(
-      identity.getPrivateKey(),
-      signedPreKeyPrivate,
-      oneTimePreKeyPrivate,
-      remoteEphemeral,
-      remoteIdentity
-    );
-
-    createSessionFromRoot(rootKey, msg.ratchetPublicKey ?? null);
-
-    preKeys.consumeOneTimePreKey(usedOneTimePreKeyId);
-
-    console.log("X3DH responder session established");
     rl.prompt();
     return;
   }
@@ -1139,10 +1180,29 @@ ws.on("message", (data) => {
     } catch (err) {
       console.error("Failed to decrypt message:", err);
 
+      const reason = err instanceof Error ? err.message : "decrypt failed";
+
+      if (reason === "session not established") {
+        addNotification({
+          from: msg.from,
+          fromDeviceId: msg.fromDeviceId,
+          type: "message",
+          messageNumber: msg.messageNumber,
+          note: "当前会话尚未建立 session，请让本端先发送一条消息或等待 X3DH 初始化",
+        });
+
+        console.log(
+          `[提醒] ${msg.from}/${msg.fromDeviceId} 的消息未解密：本地 session 尚未建立。`
+        );
+
+        rl.prompt();
+        return;
+      }
+
       clearSessionWith(msg.from, msg.fromDeviceId);
 
       sendSessionResetRequest(
-        err instanceof Error ? err.message : "decrypt failed",
+        reason,
         msg.from,
         msg.fromDeviceId
       );
