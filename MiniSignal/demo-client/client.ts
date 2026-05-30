@@ -19,8 +19,9 @@ import { ContactStore } from "./contact/contactStore";
 
 const userId = process.argv[2];
 const deviceId = process.argv[3];
-const targetId = process.argv[4];
-const targetDeviceId = process.argv[5];
+
+let targetId = process.argv[4];
+let targetDeviceId = process.argv[5];
 
 if (!userId || !deviceId || !targetId || !targetDeviceId) {
   console.log("usage: npx ts-node client.ts alice desktop bob phone");
@@ -31,12 +32,40 @@ const identity = new IdentityManager(userId, deviceId);
 const preKeys = new PreKeyManager(identity.getPrivateKey());
 preKeys.ensureOneTimePreKeys(5);
 
-let session: MiniSessionState | null = SessionStore.load(
-  userId,
-  deviceId,
-  targetId,
-  targetDeviceId
-);
+let session: MiniSessionState | null = null;
+
+function loadCurrentSession() {
+  session = SessionStore.load(
+    userId,
+    deviceId,
+    targetId,
+    targetDeviceId
+  );
+
+  if (session) {
+    console.log(`session restored for ${targetId}/${targetDeviceId}`);
+  }
+}
+
+function switchCurrentTarget(remoteUserId: string, remoteDeviceId: string) {
+  targetId = remoteUserId;
+  targetDeviceId = remoteDeviceId;
+
+  session = SessionStore.load(
+    userId,
+    deviceId,
+    targetId,
+    targetDeviceId
+  );
+
+  if (session) {
+    console.log(`session loaded for ${targetId}/${targetDeviceId}`);
+  } else {
+    console.log(`no session for ${targetId}/${targetDeviceId}`);
+  }
+}
+
+loadCurrentSession();
 
 let pendingMessage: string | null = null;
 let resetInProgress = false;
@@ -47,27 +76,40 @@ function saveSession() {
   }
 }
 
-function clearLocalSession() {
-  SessionStore.delete(userId, deviceId, targetId, targetDeviceId);
-  session = null;
+function clearSessionWith(remoteUserId: string, remoteDeviceId: string) {
+  SessionStore.delete(userId, deviceId, remoteUserId, remoteDeviceId);
+
+  if (remoteUserId === targetId && remoteDeviceId === targetDeviceId) {
+    session = null;
+  }
 }
 
-function sendSessionResetRequest(reason: string) {
+function clearLocalSession() {
+  clearSessionWith(targetId, targetDeviceId);
+}
+
+function sendSessionResetRequest(
+  reason: string,
+  remoteUserId: string,
+  remoteDeviceId: string
+) {
   if (resetInProgress) {
     return;
   }
 
   resetInProgress = true;
 
-  console.log("Session error detected, requesting session reset...");
+  console.log(
+    `Session error detected with ${remoteUserId}/${remoteDeviceId}, requesting session reset...`
+  );
 
   ws.send(
     JSON.stringify({
       type: "session-reset-request",
       from: userId,
       fromDeviceId: deviceId,
-      target: targetId,
-      targetDeviceId,
+      target: remoteUserId,
+      targetDeviceId: remoteDeviceId,
       reason,
     })
   );
@@ -699,7 +741,8 @@ ws.on("message", (data) => {
       `Session reset requested by ${msg.from}/${msg.fromDeviceId}: ${msg.reason}`
     );
 
-    clearLocalSession();
+    switchCurrentTarget(msg.from, msg.fromDeviceId);
+    clearSessionWith(msg.from, msg.fromDeviceId);
     resetInProgress = false;
 
     ws.send(
@@ -712,7 +755,9 @@ ws.on("message", (data) => {
       })
     );
 
-    console.log("local session deleted, next message will rebuild X3DH session");
+    console.log(
+      `session with ${msg.from}/${msg.fromDeviceId} deleted, next message will rebuild X3DH session`
+    );
     rl.prompt();
     return;
   }
@@ -721,10 +766,14 @@ ws.on("message", (data) => {
     console.log();
     console.log(`Session reset confirmed by ${msg.from}/${msg.fromDeviceId}`);
 
-    clearLocalSession();
+    switchCurrentTarget(msg.from, msg.fromDeviceId);
+    clearSessionWith(msg.from, msg.fromDeviceId);
     resetInProgress = false;
 
-    console.log("local session deleted, next message will rebuild X3DH session");
+    console.log(
+      `session with ${msg.from}/${msg.fromDeviceId} deleted, next message will rebuild X3DH session`
+    );
+
     rl.prompt();
     return;
   }
@@ -874,6 +923,8 @@ ws.on("message", (data) => {
   }
 
   if (msg.type === "x3dh-init") {
+    switchCurrentTarget(msg.from, msg.fromDeviceId);
+
     const remoteEphemeral = parsePublicKey(msg.ephemeralPublic);
     const remoteIdentity = parsePublicKey(msg.identityKey);
 
@@ -932,14 +983,28 @@ ws.on("message", (data) => {
       ? preKeys.getOneTimePreKeyPrivate(usedOneTimePreKeyId)
       : null;
 
+    if (msg.usedOneTimePreKey && !oneTimePreKeyPrivate) {
+      console.error(
+        `X3DH init rejected: missing oneTimePreKey private key ${usedOneTimePreKeyId}`
+      );
+      rl.prompt();
+      return;
+    }
+
     const usedSignedPreKeyId = Number(msg.usedSignedPreKeyId ?? 1);
     const signedPreKeyPrivate = preKeys.getSignedPreKeyPrivate(usedSignedPreKeyId);
 
     if (!signedPreKeyPrivate) {
-      console.error(`X3DH init rejected: missing signedPreKey private key ${usedSignedPreKeyId}`);
+      console.error(
+        `X3DH init rejected: missing signedPreKey private key ${usedSignedPreKeyId}`
+      );
       rl.prompt();
       return;
     }
+
+    console.log(
+      `X3DH responder keys: signedPreKeyId=${usedSignedPreKeyId}, oneTimePreKeyId=${usedOneTimePreKeyId}, usedOneTimePreKey=${Boolean(msg.usedOneTimePreKey)}, hasOneTimePrivate=${Boolean(oneTimePreKeyPrivate)}`
+    );
 
     const rootKey = X3DHManager.responder(
       identity.getPrivateKey(),
@@ -949,9 +1014,9 @@ ws.on("message", (data) => {
       remoteIdentity
     );
 
-    preKeys.consumeOneTimePreKey(usedOneTimePreKeyId);
-
     createSessionFromRoot(rootKey, msg.ratchetPublicKey ?? null);
+
+    preKeys.consumeOneTimePreKey(usedOneTimePreKeyId);
 
     console.log("X3DH responder session established");
     rl.prompt();
@@ -960,6 +1025,8 @@ ws.on("message", (data) => {
 
   if (msg.type === "message") {
     try {
+      switchCurrentTarget(msg.from, msg.fromDeviceId);
+
       const plaintext = decryptIncoming(
       msg.from,
       msg.fromDeviceId,
@@ -969,7 +1036,7 @@ ws.on("message", (data) => {
       Number(msg.previousSendCounter ?? 0)
       );
       
-      MessageStore.append(targetId, targetDeviceId, userId, deviceId, {
+      MessageStore.append(msg.from, msg.fromDeviceId, userId, deviceId, {
         direction: "in",
         from: msg.from,
         fromDeviceId: msg.fromDeviceId,
@@ -984,10 +1051,12 @@ ws.on("message", (data) => {
     } catch (err) {
       console.error("Failed to decrypt message:", err);
 
-      clearLocalSession();
+      clearSessionWith(msg.from, msg.fromDeviceId);
 
       sendSessionResetRequest(
-        err instanceof Error ? err.message : "decrypt failed"
+        err instanceof Error ? err.message : "decrypt failed",
+        msg.from,
+        msg.fromDeviceId
       );
     }
 
@@ -998,6 +1067,8 @@ ws.on("message", (data) => {
   if (msg.type === "pull-result") {
     for (const item of msg.messages ?? []) {
       try {
+        switchCurrentTarget(item.from, item.fromDeviceId);
+
         const plaintext = decryptIncoming(
         item.from,
         item.fromDeviceId,
@@ -1007,10 +1078,10 @@ ws.on("message", (data) => {
         Number(item.previousSendCounter ?? 0)
       );
         
-        MessageStore.append(targetId, targetDeviceId, userId, deviceId, {
+        MessageStore.append(item.from, item.fromDeviceId, userId, deviceId, {
           direction: "in",
-          from: msg.from,
-          fromDeviceId: msg.fromDeviceId,
+          from: item.from,
+          fromDeviceId: item.fromDeviceId,
           to: userId,
           toDeviceId: deviceId,
           text: plaintext,
@@ -1021,10 +1092,12 @@ ws.on("message", (data) => {
       } catch (err) {
         console.error("Failed to decrypt pulled message:", err);
 
-        clearLocalSession();
+        clearSessionWith(item.from, item.fromDeviceId);
 
         sendSessionResetRequest(
-          err instanceof Error ? err.message : "decrypt failed"
+          err instanceof Error ? err.message : "decrypt failed",
+          item.from,
+          item.fromDeviceId
         );
       }
     }
@@ -1240,6 +1313,34 @@ rl.on("line", (line) => {
       })
     );
 
+    return;
+  }
+
+  if (text.startsWith("/switch ")) {
+    const parts = text.split(/\s+/);
+
+    if (parts.length < 3) {
+      console.log("usage: /switch <userId> <deviceId>");
+      rl.prompt();
+      return;
+    }
+
+    targetId = parts[1];
+    targetDeviceId = parts[2];
+
+    resetInProgress = false;
+    pendingMessage = null;
+
+    loadCurrentSession();
+
+    console.log(`current chat target switched to ${targetId}/${targetDeviceId}`);
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/target") {
+    console.log(`current target: ${targetId}/${targetDeviceId}`);
+    rl.prompt();
     return;
   }
 

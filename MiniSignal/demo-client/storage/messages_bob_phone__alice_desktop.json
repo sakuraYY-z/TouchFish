@@ -218,5 +218,15 @@
     "text": "hello alice aad",
     "timestamp": 1779710927960,
     "messageNumber": 0
+  },
+  {
+    "direction": "out",
+    "from": "bob",
+    "fromDeviceId": "phone",
+    "to": "alice",
+    "toDeviceId": "desktop",
+    "text": "2",
+    "timestamp": 1779850087999,
+    "messageNumber": 0
   }
 ]

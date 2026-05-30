@@ -1,0 +1,22 @@
+[
+  {
+    "direction": "out",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "alice",
+    "toDeviceId": "phone",
+    "text": "hello alice phone clean",
+    "timestamp": 1780120968631,
+    "messageNumber": 0
+  },
+  {
+    "direction": "in",
+    "from": "alice",
+    "fromDeviceId": "desktop",
+    "to": "alice",
+    "toDeviceId": "phone",
+    "text": "hello alice phone clean",
+    "timestamp": 1780120968639,
+    "messageNumber": 0
+  }
+]

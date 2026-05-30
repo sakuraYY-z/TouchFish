@@ -3,12 +3,18 @@
     "userId": "bob",
     "deviceId": "phone",
     "publicKey": "BQIMsm7ZvnjUx5NEmOywYMbtSk81oe+pCwvVYTPhU1tl",
-    "lastSeen": 1779789259543
+    "lastSeen": 1780120746981
   },
   "alice:desktop": {
     "userId": "alice",
     "deviceId": "desktop",
     "publicKey": "BQKIvDUCNdqBwfnuiC+zF7c4DiAKaCzjDzwD/OI4qG1H",
-    "lastSeen": 1779848676521
+    "lastSeen": 1780120752845
+  },
+  "alice:phone": {
+    "userId": "alice",
+    "deviceId": "phone",
+    "publicKey": "Be/sAbjGhw1bciC1+/2xrNB9PSFwP9qGjjjPC+bD66tM",
+    "lastSeen": 1780120902839
   }
 }
