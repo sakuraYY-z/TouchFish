@@ -1,6 +1,7 @@
 import { PrivateKey, PublicKey } from "@signalapp/libsignal-client";
 import readline from "readline";
 import WebSocket from "ws";
+import { ContactStore } from "./contact/contactStore";
 import { CryptoManager } from "./crypto/crypto";
 import { IdentityManager } from "./identity/identity";
 import { TrustedIdentityStore } from "./identity/trustedIdentityStore";
@@ -8,14 +9,12 @@ import { MessageStore } from "./message/messageStore";
 import { PreKeyManager } from "./prekey/prekey";
 import { DHRatchetManager } from "./session/dhRatchet";
 import {
-    MiniSessionState,
-    deriveDirectionalChains,
-    nextMessageKey,
+  MiniSessionState,
+  deriveDirectionalChains,
+  nextMessageKey,
 } from "./session/sessionState";
 import { SessionStore } from "./session/sessionStore";
 import { X3DHManager } from "./session/x3dh";
-import { ContactStore } from "./contact/contactStore";
-
 
 const userId = process.argv[2];
 const deviceId = process.argv[3];
@@ -923,6 +922,25 @@ ws.on("message", (data) => {
   }
 
   if (msg.type === "x3dh-init") {
+    const oldTargetId = targetId;
+    const oldTargetDeviceId = targetDeviceId;
+
+    const isCurrentConversation =
+      msg.from === oldTargetId && msg.fromDeviceId === oldTargetDeviceId;
+
+    if (!isCurrentConversation) {
+      console.log();
+      console.log(
+        `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 请求建立会话。当前会话仍然是 ${oldTargetId}/${oldTargetDeviceId}。`
+      );
+      console.log(
+        `输入 /switch ${msg.from} ${msg.fromDeviceId} 后，可以切换到该会话。`
+      );
+
+      rl.prompt();
+      return;
+    }
+
     switchCurrentTarget(msg.from, msg.fromDeviceId);
 
     const remoteEphemeral = parsePublicKey(msg.ephemeralPublic);
@@ -996,7 +1014,7 @@ ws.on("message", (data) => {
 
     if (!signedPreKeyPrivate) {
       console.error(
-        `X3DH init rejected: missing signedPreKey private key ${usedSignedPreKeyId}`
+        `X3DH init rejected: missing signedPreKey private key ${usedOneTimePreKeyId}`
       );
       rl.prompt();
       return;
@@ -1024,9 +1042,23 @@ ws.on("message", (data) => {
   }
 
   if (msg.type === "message") {
-    try {
-      switchCurrentTarget(msg.from, msg.fromDeviceId);
+    const isCurrentConversation =
+      msg.from === targetId && msg.fromDeviceId === targetDeviceId;
 
+    if (!isCurrentConversation) {
+      console.log();
+      console.log(
+        `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 发来一条消息。当前会话仍然是 ${targetId}/${targetDeviceId}。`
+      );
+      console.log(
+        `输入 /switch ${msg.from} ${msg.fromDeviceId} 后，可以切换到该会话。`
+      );
+
+      rl.prompt();
+      return;
+    }
+
+    try {
       const plaintext = decryptIncoming(
       msg.from,
       msg.fromDeviceId,
@@ -1066,9 +1098,17 @@ ws.on("message", (data) => {
 
   if (msg.type === "pull-result") {
     for (const item of msg.messages ?? []) {
-      try {
-        switchCurrentTarget(item.from, item.fromDeviceId);
+      const isCurrentConversation =
+        item.from === targetId && item.fromDeviceId === targetDeviceId;
 
+      if (!isCurrentConversation) {
+        console.log(
+          `[非当前会话提醒] ${item.from}/${item.fromDeviceId} 有一条离线消息。当前会话仍然是 ${targetId}/${targetDeviceId}。`
+        );
+        continue;
+      }
+
+      try {
         const plaintext = decryptIncoming(
         item.from,
         item.fromDeviceId,
