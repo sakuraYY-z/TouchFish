@@ -14,6 +14,12 @@ interface StoredSignedPreKey {
   publicKey: string;
 }
 
+interface StoredPreKeyFile {
+  currentSignedPreKeyId: number;
+  signedPreKeys: StoredSignedPreKey[];
+  oneTimePreKeys: StoredOneTimePreKey[];
+}
+
 export class PreKeyManager {
   private identityKey: PrivateKey;
   private currentSignedPreKeyId: number;
@@ -22,32 +28,97 @@ export class PreKeyManager {
   private storageDir: string;
   private storagePath: string;
 
-  constructor(identityKey: PrivateKey) {
+  constructor(identityKey: PrivateKey, userId: string, deviceId: string) {
     this.identityKey = identityKey;
-    this.oneTimePreKeys = [];
     this.storageDir = path.join(process.cwd(), "prekey-storage");
-    this.storagePath = path.join(this.storageDir, "prekeys.json");
+    this.storagePath = path.join(
+      this.storageDir,
+      `prekeys_${userId}_${deviceId}.json`
+    );
+
+    const loaded = this.load();
+
+    if (loaded) {
+      this.currentSignedPreKeyId = loaded.currentSignedPreKeyId;
+      this.signedPreKeys = loaded.signedPreKeys;
+      this.oneTimePreKeys = loaded.oneTimePreKeys;
+      console.log(
+        `prekeys loaded for ${userId}/${deviceId}, oneTimePreKeys=${this.oneTimePreKeys.length}`
+      );
+      return;
+    }
 
     const signedPreKey = PrivateKey.generate();
-
     this.currentSignedPreKeyId = 1;
     this.signedPreKeys = [
       {
         keyId: 1,
         privateKey: Buffer.from(signedPreKey.serialize()).toString("base64"),
-        publicKey: Buffer.from(signedPreKey.getPublicKey().serialize()).toString("base64"),
+        publicKey: Buffer.from(
+          signedPreKey.getPublicKey().serialize()
+        ).toString("base64"),
       },
     ];
 
+    this.oneTimePreKeys = [];
+
     for (let i = 1; i <= 5; i++) {
       const key = PrivateKey.generate();
-
       this.oneTimePreKeys.push({
         keyId: i,
         privateKey: Buffer.from(key.serialize()).toString("base64"),
-        publicKey: Buffer.from(key.getPublicKey().serialize()).toString("base64"),
+        publicKey: Buffer.from(key.getPublicKey().serialize()).toString(
+          "base64"
+        ),
       });
     }
+
+    this.save();
+    console.log(
+      `prekeys created for ${userId}/${deviceId}, oneTimePreKeys=${this.oneTimePreKeys.length}`
+    );
+  }
+
+  private load(): StoredPreKeyFile | null {
+    if (!fs.existsSync(this.storagePath)) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(this.storagePath, "utf8"));
+
+      if (
+        !parsed.currentSignedPreKeyId ||
+        !Array.isArray(parsed.signedPreKeys) ||
+        !Array.isArray(parsed.oneTimePreKeys)
+      ) {
+        return null;
+      }
+
+      return parsed as StoredPreKeyFile;
+    } catch {
+      return null;
+    }
+  }
+
+  private save() {
+    if (!fs.existsSync(this.storageDir)) {
+      fs.mkdirSync(this.storageDir, { recursive: true });
+    }
+
+    fs.writeFileSync(
+      this.storagePath,
+      JSON.stringify(
+        {
+          currentSignedPreKeyId: this.currentSignedPreKeyId,
+          signedPreKeys: this.signedPreKeys,
+          oneTimePreKeys: this.oneTimePreKeys,
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
   }
 
   private getCurrentSignedPreKeyRecord() {
@@ -70,16 +141,12 @@ export class PreKeyManager {
     );
 
     return {
-      identityKey: Buffer.from(
-        this.identityKey.getPublicKey().serialize()
-      ).toString("base64"),
-
+      identityKey: Buffer.from(this.identityKey.getPublicKey().serialize()).toString(
+        "base64"
+      ),
       signedPreKeyId: signedPreKeyRecord.keyId,
-
       signedPreKey: signedPreKeyRecord.publicKey,
-
       signedPreKeySignature: Buffer.from(signedPreKeySignature).toString("base64"),
-
       oneTimePreKeys: this.oneTimePreKeys.map((item) => ({
         keyId: item.keyId,
         publicKey: item.publicKey,
@@ -89,7 +156,6 @@ export class PreKeyManager {
 
   getSignedPreKeyPrivate(keyId?: number | null) {
     const targetKeyId = keyId ?? this.currentSignedPreKeyId;
-
     const item = this.signedPreKeys.find((key) => key.keyId === targetKeyId);
 
     if (!item) {
@@ -121,6 +187,8 @@ export class PreKeyManager {
     this.oneTimePreKeys = this.oneTimePreKeys.filter(
       (item) => item.keyId !== keyId
     );
+
+    this.save();
   }
 
   ensureOneTimePreKeys(targetCount = 5) {
@@ -149,26 +217,6 @@ export class PreKeyManager {
     this.save();
   }
 
-  private save() {
-    if (!fs.existsSync(this.storageDir)) {
-      fs.mkdirSync(this.storageDir, { recursive: true });
-    }
-
-    fs.writeFileSync(
-      this.storagePath,
-      JSON.stringify(
-        {
-          currentSignedPreKeyId: this.currentSignedPreKeyId,
-          signedPreKeys: this.signedPreKeys,
-          oneTimePreKeys: this.oneTimePreKeys,
-        },
-        null,
-        2
-      ),
-      "utf8"
-    );
-  }
-
   rotateSignedPreKey() {
     let maxKeyId = 0;
 
@@ -189,10 +237,6 @@ export class PreKeyManager {
 
     this.currentSignedPreKeyId = nextKeyId;
 
-    /**
-     * 教学版：最多保留最近 3 个 signedPreKey 私钥。
-     * 真实系统会根据时间和未完成会话做更复杂的保留策略。
-     */
     this.signedPreKeys = this.signedPreKeys
       .sort((a, b) => b.keyId - a.keyId)
       .slice(0, 3)

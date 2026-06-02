@@ -6,16 +6,16 @@ import { CryptoManager } from "./crypto/crypto";
 import { IdentityManager } from "./identity/identity";
 import { TrustedIdentityStore } from "./identity/trustedIdentityStore";
 import { MessageStore } from "./message/messageStore";
-import { NotificationStore } from "./storage/notificationStore";
 import { PreKeyManager } from "./prekey/prekey";
 import { DHRatchetManager } from "./session/dhRatchet";
 import {
-  MiniSessionState,
-  deriveDirectionalChains,
-  nextMessageKey,
+    MiniSessionState,
+    deriveDirectionalChains,
+    nextMessageKey,
 } from "./session/sessionState";
 import { SessionStore } from "./session/sessionStore";
 import { X3DHManager } from "./session/x3dh";
+import { NotificationStore } from "./storage/notificationStore";
 
 const userId = process.argv[2];
 const deviceId = process.argv[3];
@@ -62,7 +62,7 @@ if (!userId || !deviceId || !targetId || !targetDeviceId) {
 }
 
 const identity = new IdentityManager(userId, deviceId);
-const preKeys = new PreKeyManager(identity.getPrivateKey());
+const preKeys = new PreKeyManager(identity.getPrivateKey(), userId, deviceId);
 preKeys.ensureOneTimePreKeys(5);
 
 let session: MiniSessionState | null = null;
@@ -1168,21 +1168,57 @@ ws.on("message", (data) => {
 
   if (msg.type === "message") {
     if (!isCurrentConversation(msg.from, msg.fromDeviceId)) {
-      addNotification({
-        from: msg.from,
-        fromDeviceId: msg.fromDeviceId,
-        type: "message",
-        messageNumber: msg.messageNumber,
-        note: "非当前会话收到一条新消息，未自动解密",
-      });
+      try {
+        const plaintext = decryptIncoming(
+          msg.from,
+          msg.fromDeviceId,
+          msg.messageNumber,
+          msg.payload,
+          msg.ratchetPublicKey ?? null,
+          Number(msg.previousSendCounter ?? 0)
+        );
 
-      console.log();
-      console.log(
-        `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 发来一条消息。当前会话仍然是 ${targetId}/${targetDeviceId}。`
-      );
-      console.log(
-        `输入 /switch ${msg.from} ${msg.fromDeviceId} 后，可以切换到该会话。`
-      );
+        MessageStore.append(userId, deviceId, msg.from, msg.fromDeviceId, {
+          direction: "in",
+          from: msg.from,
+          fromDeviceId: msg.fromDeviceId,
+          to: userId,
+          toDeviceId: deviceId,
+          text: plaintext,
+          timestamp: Date.now(),
+          messageNumber: msg.messageNumber,
+        });
+
+        addNotification({
+          from: msg.from,
+          fromDeviceId: msg.fromDeviceId,
+          type: "message",
+          messageNumber: msg.messageNumber,
+          note: "非当前会话收到一条新消息，已后台解密并保存到历史记录",
+        });
+
+        console.log();
+        console.log(
+          `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 发来一条消息，已后台保存。当前会话仍然是 ${targetId}/${targetDeviceId}。`
+        );
+        console.log(
+          `输入 /switch ${msg.from} ${msg.fromDeviceId} 后，再输入 /history 查看。`
+        );
+      } catch (err) {
+        console.error("Failed to decrypt non-current message:", err);
+
+        addNotification({
+          from: msg.from,
+          fromDeviceId: msg.fromDeviceId,
+          type: "message",
+          messageNumber: msg.messageNumber,
+          note: "非当前会话消息后台解密失败，需要重建 session",
+        });
+
+        const reason = err instanceof Error ? err.message : "decrypt failed";
+        clearSessionWith(msg.from, msg.fromDeviceId);
+        sendSessionResetRequest(reason, msg.from, msg.fromDeviceId);
+      }
 
       rl.prompt();
       return;
