@@ -154,10 +154,6 @@ function sendSessionResetRequest(
 
   resetInProgress = true;
 
-  console.log(
-    `Session error detected with ${remoteUserId}/${remoteDeviceId}, requesting session reset...`
-  );
-
   ws.send(
     JSON.stringify({
       type: "session-reset-request",
@@ -171,14 +167,43 @@ function sendSessionResetRequest(
 }
 
 function uploadPreKeyBundle() {
+  const bundle = preKeys.getBundle();
+
   ws.send(
     JSON.stringify({
       type: "uploadPreKeyBundle",
       userId,
       deviceId,
-      bundle: preKeys.getBundle(),
+      bundle,
     })
   );
+}
+
+function createSessionFromRootFor(
+  remoteUserId: string,
+  remoteDeviceId: string,
+  rootKeyBase64: string,
+  remoteRatchetPublicKey: string | null = null
+) {
+  const oldTargetId = targetId;
+  const oldTargetDeviceId = targetDeviceId;
+  const oldSession = session;
+
+  targetId = remoteUserId;
+  targetDeviceId = remoteDeviceId;
+
+  createSessionFromRoot(rootKeyBase64, remoteRatchetPublicKey);
+
+  const newSession = session;
+
+  targetId = oldTargetId;
+  targetDeviceId = oldTargetDeviceId;
+
+  if (oldTargetId === remoteUserId && oldTargetDeviceId === remoteDeviceId) {
+    session = newSession;
+  } else {
+    session = oldSession;
+  }
 }
 
 function createSessionFromRoot(
@@ -509,17 +534,18 @@ function decryptIncoming(
   remoteRatchetPublicKey: string | null = null,
   previousSendCounter: number = 0
 ) {
-  if (!session) {
-    session = SessionStore.load(
-      userId,
-      deviceId,
-      targetId,
-      targetDeviceId
-    );
-  }
+  const oldSession = session;
+
+  session = SessionStore.load(
+    userId,
+    deviceId,
+    from,
+    fromDeviceId
+  );
 
   if (!session) {
-    throw new Error("session not established");
+    session = oldSession;
+    throw new Error(`session not established for ${from}/${fromDeviceId}`);
   }
 
   if (!session.skippedMessageKeys) {
@@ -603,6 +629,10 @@ function decryptIncoming(
 
   markMessageProcessed(id);
   saveSession();
+
+  if (!isCurrentConversation(from, fromDeviceId)) {
+    session = oldSession;
+  }
 
   return plaintext;
 }
@@ -1013,16 +1043,14 @@ ws.on("message", (data) => {
         from: msg.from,
         fromDeviceId: msg.fromDeviceId,
         type: "x3dh-init",
-        note: "非当前会话请求建立 X3DH 会话，已在后台保存 session",
+        note: "非当前会话请求建立 X3DH，会话已在后台处理",
       });
 
-      console.log();
       console.log(
         `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 请求建立会话。当前会话仍然是 ${targetId}/${targetDeviceId}。`
       );
-      console.log(
-        `已在后台保存 ${msg.from}/${msg.fromDeviceId} 的 session，输入 /switch ${msg.from} ${msg.fromDeviceId} 后可以继续聊天。`
-      );
+    } else {
+      switchCurrentTarget(msg.from, msg.fromDeviceId);
     }
 
     runWithTemporaryTarget(msg.from, msg.fromDeviceId, () => {
@@ -1113,7 +1141,12 @@ ws.on("message", (data) => {
         remoteIdentity
       );
 
-      createSessionFromRoot(rootKey, msg.ratchetPublicKey ?? null);
+      createSessionFromRootFor(
+        msg.from,
+        msg.fromDeviceId,
+        rootKey,
+        msg.ratchetPublicKey ?? null
+      );
 
       preKeys.consumeOneTimePreKey(usedOneTimePreKeyId);
 
