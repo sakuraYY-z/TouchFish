@@ -23,6 +23,9 @@ const deviceId = process.argv[3];
 let targetId = process.argv[4];
 let targetDeviceId = process.argv[5];
 
+let pendingSendAllText: string | null = null;
+let pendingSendAllTarget: string | null = null;
+
 function isCurrentConversation(remoteUserId: string, remoteDeviceId: string) {
   return remoteUserId === targetId && remoteDeviceId === targetDeviceId;
 }
@@ -54,6 +57,13 @@ function addNotification(input: {
     read: false,
     note: input.note,
   });
+
+  notifications.push({
+    from: input.from,
+    fromDeviceId: input.fromDeviceId,
+    messageNumber: input.messageNumber,
+    note: input.note,
+  });
 }
 
 if (!userId || !deviceId || !targetId || !targetDeviceId) {
@@ -66,6 +76,38 @@ const preKeys = new PreKeyManager(identity.getPrivateKey(), userId, deviceId);
 preKeys.ensureOneTimePreKeys(5);
 
 let session: MiniSessionState | null = null;
+
+const notifications: any[] = [];
+
+function showNotifications() {
+  if (notifications.length === 0) {
+    console.log("当前没有非当前会话提醒。");
+    return;
+  }
+
+  console.log("非当前会话提醒：");
+
+  notifications.forEach((item, index) => {
+    console.log(
+      `${index + 1}. 来自 ${item.from}/${item.fromDeviceId}，消息编号=${item.messageNumber}，说明=${item.note}`
+    );
+  });
+}
+
+function clearAllNotifications() {
+  notifications.length = 0;
+  console.log("所有非当前会话提醒已清空。");
+}
+
+function clearNotificationsFrom(peerId: string, peerDeviceId: string) {
+  for (let i = notifications.length - 1; i >= 0; i--) {
+    const item = notifications[i];
+
+    if (item.from === peerId && item.fromDeviceId === peerDeviceId) {
+      notifications.splice(i, 1);
+    }
+  }
+}
 
 function loadCurrentSession() {
   session = SessionStore.load(
@@ -905,6 +947,8 @@ ws.on("message", (data) => {
 
     if (!msg.devices || msg.devices.length === 0) {
       console.log("  no registered devices");
+      pendingSendAllText = null;
+      pendingSendAllTarget = null;
       rl.prompt();
       return;
     }
@@ -912,10 +956,25 @@ ws.on("message", (data) => {
     for (const device of msg.devices) {
       const status = device.online ? "online" : "offline";
       const lastSeen = new Date(device.lastSeen).toLocaleString();
-
       console.log(
         `  - ${device.userId}/${device.deviceId} [${status}], lastSeen=${lastSeen}`
       );
+    }
+
+    if (pendingSendAllText && pendingSendAllTarget === msg.target) {
+      const text = pendingSendAllText;
+      pendingSendAllText = null;
+      pendingSendAllTarget = null;
+
+      for (const device of msg.devices) {
+        if (device.userId === userId && device.deviceId === deviceId) {
+          continue;
+        }
+
+        switchCurrentTarget(device.userId, device.deviceId);
+        sendChat(text);
+        console.log(`sendAll queued to ${device.userId}/${device.deviceId}`);
+      }
     }
 
     rl.prompt();
@@ -1453,27 +1512,13 @@ rl.on("line", (line) => {
   }
 
   if (text === "/notifications") {
-    const items = NotificationStore.unread(userId, deviceId);
+    showNotifications();
+    rl.prompt();
+    return;
+  }
 
-    if (items.length === 0) {
-      console.log("no unread notifications");
-      rl.prompt();
-      return;
-    }
-
-    console.log("===== UNREAD NOTIFICATIONS =====");
-
-    for (const item of items) {
-      const time = new Date(item.timestamp).toLocaleString();
-      const numberText =
-        item.messageNumber === undefined ? "" : `, messageNumber=${item.messageNumber}`;
-
-      console.log(
-        `[${time}] ${item.type}: ${item.from}/${item.fromDeviceId}${numberText} - ${item.note}`
-      );
-    }
-
-    console.log("===============================");
+  if (text === "/clearNotifications") {
+    clearAllNotifications();
     rl.prompt();
     return;
   }
@@ -1567,16 +1612,44 @@ rl.on("line", (line) => {
     return;
   }
 
-  if (text === "/devices") {
+  if (text.startsWith("/devices")) {
+    const parts = text.trim().split(" ");
+    const queryUser = parts[1] ?? targetId;
+
     ws.send(
       JSON.stringify({
-        type: "list-devices",
-        userId,
-        deviceId,
-        target: targetId,
+        type: "getDevices",
+        target: queryUser,
       })
     );
 
+    rl.prompt();
+    return;
+  }
+
+  if (text.startsWith("/sendAll ")) {
+    const parts = text.trim().split(" ");
+
+    if (parts.length < 3) {
+      console.log("用法：/sendAll <userId> <message>");
+      rl.prompt();
+      return;
+    }
+
+    const sendAllTarget = parts[1];
+    const textToSend = parts.slice(2).join(" ");
+
+    pendingSendAllTarget = sendAllTarget;
+    pendingSendAllText = textToSend;
+
+    ws.send(
+      JSON.stringify({
+        type: "getDevices",
+        target: sendAllTarget,
+      })
+    );
+
+    rl.prompt();
     return;
   }
 
@@ -1592,12 +1665,15 @@ rl.on("line", (line) => {
     targetId = parts[1];
     targetDeviceId = parts[2];
 
+    clearNotificationsFrom(targetId, targetDeviceId);
+
     resetInProgress = false;
     pendingMessage = null;
 
     loadCurrentSession();
 
     console.log(`current chat target switched to ${targetId}/${targetDeviceId}`);
+    console.log("该会话的非当前会话提醒已清除。");
     rl.prompt();
     return;
   }
