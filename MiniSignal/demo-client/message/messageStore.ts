@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 
 export type MessageDirection = "in" | "out";
+export type MessageStatus = "sent" | "delivered" | "read";
 
 export interface ChatMessageRecord {
   direction: MessageDirection;
@@ -12,6 +13,10 @@ export interface ChatMessageRecord {
   text: string;
   timestamp: number;
   messageNumber: number;
+  status?: MessageStatus;
+  deliveredAt?: number;
+  read?: boolean;
+  readAt?: number;
 }
 
 export class MessageStore {
@@ -86,5 +91,82 @@ export class MessageStore {
     } catch {
       return [];
     }
+  }
+
+  static load(
+    localUserId: string,
+    localDeviceId: string,
+    remoteUserId: string,
+    remoteDeviceId: string
+  ): ChatMessageRecord[] {
+    return this.list(localUserId, localDeviceId, remoteUserId, remoteDeviceId);
+  }
+
+  static save(
+    localUserId: string,
+    localDeviceId: string,
+    remoteUserId: string,
+    remoteDeviceId: string,
+    messages: ChatMessageRecord[]
+  ) {
+    if (!fs.existsSync(this.storageDir())) {
+      fs.mkdirSync(this.storageDir(), { recursive: true });
+    }
+
+    const file = this.getPath(
+      localUserId,
+      localDeviceId,
+      remoteUserId,
+      remoteDeviceId
+    );
+
+    fs.writeFileSync(file, JSON.stringify(messages, null, 2), "utf8");
+  }
+
+  static updateStatus(
+    localUserId: string,
+    localDeviceId: string,
+    peerUserId: string,
+    peerDeviceId: string,
+    messageNumber: number,
+    status: "delivered" | "read",
+    timestamp: number
+  ) {
+    const messages = this.load(
+      localUserId,
+      localDeviceId,
+      peerUserId,
+      peerDeviceId
+    );
+
+    let updated = false;
+
+    for (const item of messages) {
+      if (
+        item.direction === "out" &&
+        item.to === peerUserId &&
+        item.toDeviceId === peerDeviceId &&
+        item.messageNumber === messageNumber
+      ) {
+        item.status = status;
+
+        if (status === "delivered") {
+          item.deliveredAt = timestamp;
+        }
+
+        if (status === "read") {
+          item.readAt = timestamp;
+        }
+
+        updated = true;
+        break;
+      }
+    }
+
+    if (updated) {
+      this.save(localUserId, localDeviceId, peerUserId, peerDeviceId, messages);
+    }
+
+    return updated;
   }
 }

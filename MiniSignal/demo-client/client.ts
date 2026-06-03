@@ -723,6 +723,7 @@ function sendChat(line: string) {
   text: line,
   timestamp: Date.now(),
   messageNumber,
+  status: "sent",
 });
 }
 
@@ -938,6 +939,25 @@ ws.on("message", (data) => {
 
   if (msg.type === "message-status") {
     console.log(`message ${msg.messageNumber}: ${msg.status}`);
+    rl.prompt();
+    return;
+  }
+
+  if (msg.type === "receipt") {
+    MessageStore.updateStatus(
+      userId,
+      deviceId,
+      msg.from,
+      msg.fromDeviceId,
+      msg.messageNumber,
+      msg.receiptType,
+      msg.timestamp
+    );
+
+    console.log(
+      `message ${msg.messageNumber} ${msg.receiptType} by ${msg.from}/${msg.fromDeviceId}`
+    );
+
     rl.prompt();
     return;
   }
@@ -1248,6 +1268,19 @@ ws.on("message", (data) => {
           messageNumber: msg.messageNumber,
         });
 
+        ws.send(
+          JSON.stringify({
+            type: "receipt",
+            receiptType: "delivered",
+            from: userId,
+            fromDeviceId: deviceId,
+            to: msg.from,
+            toDeviceId: msg.fromDeviceId,
+            messageNumber: msg.messageNumber,
+            timestamp: Date.now(),
+          })
+        );
+
         addNotification({
           from: msg.from,
           fromDeviceId: msg.fromDeviceId,
@@ -1303,6 +1336,20 @@ ws.on("message", (data) => {
         timestamp: Date.now(),
         messageNumber: msg.messageNumber,
       });
+
+      ws.send(
+        JSON.stringify({
+          type: "receipt",
+          receiptType: "delivered",
+          from: userId,
+          fromDeviceId: deviceId,
+          to: msg.from,
+          toDeviceId: msg.fromDeviceId,
+          messageNumber: msg.messageNumber,
+          timestamp: Date.now(),
+        })
+      );
+      
       console.log();
       console.log(`[${msg.from}/${msg.fromDeviceId}] ${plaintext}`);
     } catch (err) {
@@ -1378,6 +1425,20 @@ ws.on("message", (data) => {
           timestamp: Date.now(),
           messageNumber: item.messageNumber,
         });
+
+        ws.send(
+          JSON.stringify({
+            type: "receipt",
+            receiptType: "delivered",
+            from: userId,
+            fromDeviceId: deviceId,
+            to: item.from,
+            toDeviceId: item.fromDeviceId,
+            messageNumber: item.messageNumber,
+            timestamp: Date.now(),
+          })
+        );
+
         console.log(`[${item.from}/${item.fromDeviceId}] ${plaintext}`);
       } catch (err) {
         console.error("Failed to decrypt pulled message:", err);
@@ -1500,15 +1561,95 @@ rl.on("line", (line) => {
 
   for (const item of messages) {
     const time = new Date(item.timestamp).toLocaleString();
-    const arrow = item.direction === "out" ? "->" : "<-";
+    const status = item.direction === "out" ? item.status ?? "sent" : "received";
 
     console.log(
-      `[${time}] ${item.from}/${item.fromDeviceId} ${arrow} ${item.to}/${item.toDeviceId}: ${item.text}`
+      `[${time}] ${item.from}/${item.fromDeviceId} -> ${item.to}/${item.toDeviceId}: ${item.text} [${status}]`
     );
+  }
+
+  const unreadIncoming = messages.filter((item: any) => {
+    return (
+      item.direction === "in" &&
+      item.from === targetId &&
+      item.fromDeviceId === targetDeviceId &&
+      item.read !== true
+    );
+  });
+
+  for (const item of unreadIncoming) {
+    item.read = true;
+    item.readAt = Date.now();
+
+    ws.send(
+      JSON.stringify({
+        type: "receipt",
+        receiptType: "read",
+        from: userId,
+        fromDeviceId: deviceId,
+        to: item.from,
+        toDeviceId: item.fromDeviceId,
+        messageNumber: item.messageNumber,
+        timestamp: Date.now(),
+      })
+    );
+  }
+
+  if (unreadIncoming.length > 0) {
+    MessageStore.save(userId, deviceId, targetId, targetDeviceId, messages);
+    console.log(`已自动标记 ${unreadIncoming.length} 条消息为已读。`);
   }
 
   rl.prompt();
   return;
+  }
+
+  if (text === "/read") {
+    const messages = MessageStore.load(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId
+    );
+
+    const unreadIncoming = messages.filter((item: any) => {
+      return (
+        item.direction === "in" &&
+        item.from === targetId &&
+        item.fromDeviceId === targetDeviceId &&
+        item.read !== true
+      );
+    });
+
+    if (unreadIncoming.length === 0) {
+      console.log("当前会话没有未读消息。");
+      rl.prompt();
+      return;
+    }
+
+    for (const item of unreadIncoming) {
+      item.read = true;
+      item.readAt = Date.now();
+
+      ws.send(
+        JSON.stringify({
+          type: "receipt",
+          receiptType: "read",
+          from: userId,
+          fromDeviceId: deviceId,
+          to: item.from,
+          toDeviceId: item.fromDeviceId,
+          messageNumber: item.messageNumber,
+          timestamp: Date.now(),
+        })
+      );
+    }
+
+    MessageStore.save(userId, deviceId, targetId, targetDeviceId, messages);
+
+    console.log(`已标记 ${unreadIncoming.length} 条消息为已读，并发送已读回执。`);
+    rl.prompt();
+    return;
   }
 
   if (text === "/notifications") {
