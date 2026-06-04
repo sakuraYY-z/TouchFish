@@ -82,6 +82,14 @@ let session: MiniSessionState | null = null;
 
 const notifications: any[] = [];
 
+const resetPendingPeers = new Set<string>();
+const resetRequestedPeers = new Set<string>();
+const sessionNeedsRebuild = new Set<string>();
+
+function peerKey(peerUserId: string, peerDeviceId: string) {
+  return `${peerUserId}:${peerDeviceId}`;
+}
+
 function showNotifications() {
   if (notifications.length === 0) {
     console.log("当前没有非当前会话提醒。");
@@ -738,6 +746,12 @@ function decryptIncoming(
 }
 
 function sendChat(line: string) {
+  const key = peerKey(targetId, targetDeviceId);
+
+  if (sessionNeedsRebuild.has(key)) {
+    clearSessionWith(targetId, targetDeviceId);
+  }
+
   if (!session) {
     pendingMessage = line;
     ws.send(
@@ -931,59 +945,42 @@ ws.on("message", (data) => {
   }
 
   if (msg.type === "session-reset-request") {
-    console.log();
-    console.log(
-      `Session reset requested by ${msg.from}/${msg.fromDeviceId}: ${msg.reason}`
-    );
+    const key = peerKey(msg.from, msg.fromDeviceId);
 
-    if (!isCurrentConversation(msg.from, msg.fromDeviceId)) {
-      addNotification({
-        from: msg.from,
-        fromDeviceId: msg.fromDeviceId,
-        type: "session-reset",
-        note: `非当前会话请求重置 session: ${msg.reason}`,
-      });
-    }
+    resetRequestedPeers.add(key);
+    sessionNeedsRebuild.add(key);
 
     clearSessionWith(msg.from, msg.fromDeviceId);
-    resetInProgress = false;
+
+    console.log();
+    console.log(`Session reset requested by ${msg.from}/${msg.fromDeviceId}: ${msg.reason}`);
+    console.log(`session with ${msg.from}/${msg.fromDeviceId} deleted, next message will rebuild X3DH session`);
 
     ws.send(
       JSON.stringify({
-        type: "session-reset-ok",
+        type: "session-reset-confirm",
         from: userId,
         fromDeviceId: deviceId,
-        target: msg.from,
-        targetDeviceId: msg.fromDeviceId,
+        to: msg.from,
+        toDeviceId: msg.fromDeviceId,
       })
     );
 
-    console.log(
-      `session with ${msg.from}/${msg.fromDeviceId} deleted, next message will rebuild X3DH session`
-    );
     rl.prompt();
     return;
   }
 
   if (msg.type === "session-reset-ok") {
-    console.log();
-    console.log(`Session reset confirmed by ${msg.from}/${msg.fromDeviceId}`);
+    const key = peerKey(msg.from, msg.fromDeviceId);
 
-    if (!isCurrentConversation(msg.from, msg.fromDeviceId)) {
-      addNotification({
-        from: msg.from,
-        fromDeviceId: msg.fromDeviceId,
-        type: "session-reset",
-        note: "非当前会话 session reset 已确认",
-      });
-    }
+    resetPendingPeers.delete(key);
+    sessionNeedsRebuild.add(key);
 
     clearSessionWith(msg.from, msg.fromDeviceId);
-    resetInProgress = false;
 
-    console.log(
-      `session with ${msg.from}/${msg.fromDeviceId} deleted, next message will rebuild X3DH session`
-    );
+    console.log();
+    console.log(`Session reset confirmed by ${msg.from}/${msg.fromDeviceId}`);
+    console.log(`session with ${msg.from}/${msg.fromDeviceId} deleted, next message will rebuild X3DH session`);
 
     rl.prompt();
     return;
@@ -1142,6 +1139,10 @@ ws.on("message", (data) => {
     createSessionFromRoot(result.rootKey);
 
     console.log("X3DH initiator session established");
+
+    sessionNeedsRebuild.delete(peerKey(targetId, targetDeviceId));
+    resetPendingPeers.delete(peerKey(targetId, targetDeviceId));
+    resetRequestedPeers.delete(peerKey(targetId, targetDeviceId));
 
     const x3dhInitPayload = {
       from: userId,
@@ -1441,13 +1442,23 @@ ws.on("message", (data) => {
         return;
       }
 
-      clearSessionWith(msg.from, msg.fromDeviceId);
+      const key = peerKey(msg.from, msg.fromDeviceId);
 
-      sendSessionResetRequest(
-        reason,
-        msg.from,
-        msg.fromDeviceId
-      );
+      clearSessionWith(msg.from, msg.fromDeviceId);
+      sessionNeedsRebuild.add(key);
+
+      if (!resetPendingPeers.has(key)) {
+        resetPendingPeers.add(key);
+        sendSessionResetRequest(reason, msg.from, msg.fromDeviceId);
+
+        console.log(
+          `已向 ${msg.from}/${msg.fromDeviceId} 发送 session reset 请求，等待对方确认。`
+        );
+      } else {
+        console.log(
+          `${msg.from}/${msg.fromDeviceId} 的 session reset 已在等待中，不重复发送。`
+        );
+      }
     }
 
     rl.prompt();
