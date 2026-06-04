@@ -240,7 +240,9 @@ wss.on("connection", (ws) => {
         signedPreKeyId: bundle.signedPreKeyId,
         signedPreKey: bundle.signedPreKey,
         signedPreKeySignature: bundle.signedPreKeySignature,
-        oneTimePreKey: selectedOneTimePreKey,
+        oneTimePreKeyId: selectedOneTimePreKey ? selectedOneTimePreKey.keyId : null,
+        oneTimePreKey: selectedOneTimePreKey ? selectedOneTimePreKey.publicKey : null,
+        hasOneTimePreKey: !!selectedOneTimePreKey,
       };
 
       bundles.set(key, bundle);

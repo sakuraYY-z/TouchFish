@@ -285,6 +285,28 @@ function uploadPreKeyBundle() {
       bundle,
     })
   );
+
+  console.log(
+    `uploaded prekey bundle, oneTimePreKeys=${preKeys.getOneTimePreKeyCount()}`
+  );
+}
+
+function ensureAndUploadPreKeys() {
+  const before = preKeys.getOneTimePreKeyCount();
+
+  if (before >= 2) {
+    return;
+  }
+
+  preKeys.ensureOneTimePreKeys(5);
+
+  const after = preKeys.getOneTimePreKeyCount();
+
+  console.log(
+    `oneTimePreKeys low: ${before}, refreshed to ${after}`
+  );
+
+  uploadPreKeyBundle();
 }
 
 function createSessionFromRootFor(
@@ -342,6 +364,10 @@ function createSessionFromRoot(
    */
   if (remoteRatchetPublicKey) {
     const remotePublicKey = parsePublicKey(remoteRatchetPublicKey);
+
+    if (!remotePublicKey) {
+      throw new Error("Failed to parse remote ratchet public key");
+    }
 
     const step = DHRatchetManager.ratchetStep(
       localRatchet.privateKey,
@@ -585,6 +611,11 @@ function applyReceiveRatchetIfNeeded(remoteRatchetPublicKey: string | null) {
 
   const localRatchetPrivateKey = parsePrivateKey(session.localRatchetPrivateKey);
   const remoteRatchetKey = parsePublicKey(remoteRatchetPublicKey);
+
+  if (!remoteRatchetKey) {
+    throw new Error("Failed to parse remote ratchet public key");
+  }
+
   let rootKey = Buffer.from(session.rootKey, "base64");
 
   /**
@@ -811,8 +842,12 @@ function shortKey(value: string | null | undefined) {
   return `${value.slice(0, 8)}...${value.slice(-8)}`;
 }
 
-function parsePublicKey(base64: string) {
-  return PublicKey.deserialize(Buffer.from(base64, "base64"));
+function parsePublicKey(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  return PublicKey.deserialize(Buffer.from(value, "base64"));
 }
 
 function verifySignedPreKeySignature(input: {
@@ -927,6 +962,7 @@ ws.on("open", () => {
   );
 
   uploadPreKeyBundle();
+  ensureAndUploadPreKeys();
 
   if (session) {
     console.log("session restored");
@@ -1071,6 +1107,12 @@ ws.on("message", (data) => {
 
     const remoteIdentity = parsePublicKey(msg.bundle.identityKey);
 
+    if (!remoteIdentity) {
+      console.error("PreKeyBundle rejected: failed to parse identity key");
+      rl.prompt();
+      return;
+    }
+
     const trustResult = TrustedIdentityStore.checkAndTrust(
       userId,
       deviceId,
@@ -1119,7 +1161,22 @@ ws.on("message", (data) => {
 
     console.log("SignedPreKey signature verified");
 
+    if (!msg.bundle.oneTimePreKey) {
+      console.warn();
+      console.warn(
+        `警告：${targetId}/${targetDeviceId} 当前没有可用 oneTimePreKey，将使用 signedPreKey fallback 建立会话。`
+      );
+      console.warn("该模式仍可端到端加密，但缺少一次性 PreKey 带来的额外前向安全性。");
+      console.warn();
+    }
+
     const remoteSignedPreKey = parsePublicKey(msg.bundle.signedPreKey);
+
+    if (!remoteSignedPreKey) {
+      console.error("PreKeyBundle rejected: failed to parse signedPreKey");
+      rl.prompt();
+      return;
+    }
       
     const remoteOneTimePreKey = msg.bundle.oneTimePreKey
       ? parsePublicKey(msg.bundle.oneTimePreKey.publicKey)
@@ -1202,6 +1259,11 @@ ws.on("message", (data) => {
       const remoteEphemeral = parsePublicKey(msg.ephemeralPublic);
       const remoteIdentity = parsePublicKey(msg.identityKey);
 
+      if (!remoteEphemeral || !remoteIdentity) {
+        console.error("X3DH init rejected: failed to parse public keys");
+        return;
+      }
+
       const trustResult = TrustedIdentityStore.checkAndTrust(
         userId,
         deviceId,
@@ -1249,11 +1311,18 @@ ws.on("message", (data) => {
 
       const signedPreKeyId = Number(msg.usedSignedPreKeyId ?? 1);
       const usedOneTimePreKeyId =
-        msg.usedOneTimePreKeyId === undefined || msg.usedOneTimePreKeyId === null
+        msg.usedOneTimePreKeyId === null
           ? null
           : Number(msg.usedOneTimePreKeyId);
 
       const signedPreKeyPrivate = preKeys.getSignedPreKeyPrivate(signedPreKeyId);
+
+      if (!signedPreKeyPrivate) {
+        console.error(
+          `X3DH init rejected: missing signedPreKey private key ${signedPreKeyId}`
+        );
+        return;
+      }
 
       const oneTimePreKeyPrivate =
         usedOneTimePreKeyId === null
@@ -1263,13 +1332,6 @@ ws.on("message", (data) => {
       if (msg.usedOneTimePreKey && !oneTimePreKeyPrivate) {
         console.error(
           `X3DH init rejected: missing oneTimePreKey private key ${usedOneTimePreKeyId}`
-        );
-        return;
-      }
-
-      if (!signedPreKeyPrivate) {
-        console.error(
-          `X3DH init rejected: missing signedPreKey private key ${signedPreKeyId}`
         );
         return;
       }
@@ -1294,6 +1356,20 @@ ws.on("message", (data) => {
       );
 
       preKeys.consumeOneTimePreKey(usedOneTimePreKeyId);
+
+      const usedOneTimePreKey =
+        msg.usedOneTimePreKeyId !== null &&
+        msg.usedOneTimePreKeyId !== undefined &&
+        msg.usedOneTimePreKeyId !== "";
+
+      if (usedOneTimePreKey) {
+        preKeys.consumeOneTimePreKey(Number(msg.usedOneTimePreKeyId));
+        ensureAndUploadPreKeys();
+      } else {
+        console.warn(
+          `X3DH init from ${msg.from}/${msg.fromDeviceId} did not use oneTimePreKey, signedPreKey fallback mode.`
+        );
+      }
 
       console.log("X3DH responder session established");
     });
@@ -1688,6 +1764,49 @@ rl.on("line", (line) => {
     return;
   }
 
+  if (text === "/prekeys") {
+    const count = preKeys.getOneTimePreKeyCount();
+
+    console.log();
+    console.log(`PreKey 状态：${userId}/${deviceId}`);
+    console.log(`SignedPreKeyId: ${preKeys.getCurrentSignedPreKeyId()}`);
+    console.log(`OneTimePreKeys: ${count}`);
+
+    if (count === 0) {
+      console.log("警告：oneTimePreKey 已耗尽，新的会话会退化为 signedPreKey fallback。");
+    } else if (count < 2) {
+      console.log("提示：oneTimePreKey 数量较低，建议执行 /refreshPreKeys。");
+    }
+
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/refreshPreKeys") {
+    const before = preKeys.getOneTimePreKeyCount();
+
+    preKeys.ensureOneTimePreKeys(5);
+    uploadPreKeyBundle();
+
+    console.log(
+      `PreKey 已刷新：oneTimePreKeys ${before} -> ${preKeys.getOneTimePreKeyCount()}`
+    );
+
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/debugClearPreKeys") {
+    preKeys.clearOneTimePreKeysForDebug();
+    uploadPreKeyBundle();
+
+    console.log("DEBUG: 已清空本机 oneTimePreKeys，并重新上传 PreKeyBundle。");
+    console.log("注意：这是测试命令，只用于验证 signedPreKey fallback。");
+
+    rl.prompt();
+    return;
+  }
+
   if (text === "/history") {
   const messages = MessageStore.list(userId, deviceId, targetId, targetDeviceId);
 
@@ -2009,6 +2128,25 @@ rl.on("line", (line) => {
 
   if (text === "/pull") {
     ws.send(JSON.stringify({ type: "pull", userId, deviceId }));
+    return;
+  }
+
+  if (text === "/requestReset") {
+    sendSessionResetRequest(
+      "manual reset requested",
+      targetId,
+      targetDeviceId
+    );
+
+    clearSessionWith(targetId, targetDeviceId);
+    sessionNeedsRebuild.add(peerKey(targetId, targetDeviceId));
+
+    console.log(
+      `已向 ${targetId}/${targetDeviceId} 发送 session reset 请求。`
+    );
+    console.log("本地 session 已删除，下一条消息会重新建立 X3DH。");
+
+    rl.prompt();
     return;
   }
 

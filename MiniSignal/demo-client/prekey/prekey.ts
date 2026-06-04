@@ -248,4 +248,17 @@ export class PreKeyManager {
 
     return nextKeyId;
   }
+
+  getOneTimePreKeyCount() {
+    return this.oneTimePreKeys.length;
+  }
+
+  getCurrentSignedPreKeyId() {
+    return this.currentSignedPreKeyId;
+  }
+
+  clearOneTimePreKeysForDebug() {
+    this.oneTimePreKeys = [];
+    this.save();
+  }
 }
