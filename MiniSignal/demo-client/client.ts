@@ -1084,9 +1084,16 @@ ws.on("message", (data) => {
 
     if (!trustResult.ok) {
       console.error();
-      console.error("SECURITY WARNING: remote identity key changed!");
-      console.error(`${targetId}/${targetDeviceId} identityKey is different from trusted record.`);
-      console.error("Session creation rejected. Use /trust-reset if this change is expected.");
+      console.error("安全警告：对方身份密钥发生变化！");
+      console.error(
+        `${targetId}/${targetDeviceId} 的 identityKey 和本地信任记录不一致。`
+      );
+      console.error("这可能是对方重装、换设备，也可能是中间人攻击。");
+      console.error(`当前会话建立已被拒绝。`);
+      console.error(`确认安全后请输入：/trust ${targetId} ${targetDeviceId}`);
+      console.error();
+
+      pendingMessage = null;
       rl.prompt();
       return;
     }
@@ -1580,6 +1587,36 @@ rl.on("line", (line) => {
     );
 
     console.log("=========================");
+    rl.prompt();
+    return;
+  }
+
+  if (text.startsWith("/trust ")) {
+    const parts = line.trim().split(" ");
+
+    if (parts.length < 3) {
+      console.log("用法：/trust <userId> <deviceId>");
+      rl.prompt();
+      return;
+    }
+
+    const trustUserId = parts[1];
+    const trustDeviceId = parts[2];
+
+    TrustedIdentityStore.forget(
+      userId,
+      deviceId,
+      trustUserId,
+      trustDeviceId
+    );
+
+    clearSessionWith(trustUserId, trustDeviceId);
+
+    console.log(
+      `已清除 ${trustUserId}/${trustDeviceId} 的旧身份信任和旧 session。`
+    );
+    console.log("下一次发送消息时会重新获取 PreKeyBundle 并建立新的 X3DH 会话。");
+
     rl.prompt();
     return;
   }
