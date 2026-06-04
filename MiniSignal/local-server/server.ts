@@ -165,26 +165,36 @@ wss.on("connection", (ws) => {
       if (!existing) {
         bundles.set(key, message.bundle);
       } else {
-        /**
-         * 不直接覆盖已有 bundle，避免 Bob 每次重启都把 oneTimePreKey 池重置为 1。
-         * 这里只补充服务器还没有的 oneTimePreKey。
-         */
-        const existingIds = new Set(
-          existing.oneTimePreKeys.map((item: any) => Number(item.keyId))
-        );
+        const identityChanged = existing.identityKey !== message.bundle.identityKey;
+        const signedPreKeyChanged =
+          existing.signedPreKey !== message.bundle.signedPreKey ||
+          Number(existing.signedPreKeyId) !== Number(message.bundle.signedPreKeyId);
 
-        const newKeys = (message.bundle.oneTimePreKeys ?? []).filter(
-          (item: any) => !existingIds.has(Number(item.keyId))
-        );
+        if (identityChanged || signedPreKeyChanged) {
+          bundles.set(key, message.bundle);
 
-        existing.oneTimePreKeys.push(...newKeys);
+          console.log(
+            `${userId} (${deviceId}) uploaded new identity/signedPreKey, bundle replaced`
+          );
+        } else {
+          const existingIds = new Set(
+            existing.oneTimePreKeys.map((item: any) => Number(item.keyId))
+          );
 
-        existing.identityKey = message.bundle.identityKey;
-        existing.signedPreKeyId = Number(message.bundle.signedPreKeyId ?? existing.signedPreKeyId ?? 1);
-        existing.signedPreKey = message.bundle.signedPreKey;
-        existing.signedPreKeySignature = message.bundle.signedPreKeySignature;
+          const newKeys = (message.bundle.oneTimePreKeys ?? []).filter(
+            (item: any) => !existingIds.has(Number(item.keyId))
+          );
 
-        bundles.set(key, existing);
+          existing.oneTimePreKeys.push(...newKeys);
+          existing.identityKey = message.bundle.identityKey;
+          existing.signedPreKeyId = Number(
+            message.bundle.signedPreKeyId ?? existing.signedPreKeyId ?? 1
+          );
+          existing.signedPreKey = message.bundle.signedPreKey;
+          existing.signedPreKeySignature = message.bundle.signedPreKeySignature;
+
+          bundles.set(key, existing);
+        }
       }
 
       saveBundles();
