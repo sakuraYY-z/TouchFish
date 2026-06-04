@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
 import { PrivateKey, PublicKey } from "@signalapp/libsignal-client";
 import readline from "readline";
 import WebSocket from "ws";
@@ -9,9 +12,9 @@ import { MessageStore } from "./message/messageStore";
 import { PreKeyManager } from "./prekey/prekey";
 import { DHRatchetManager } from "./session/dhRatchet";
 import {
-    MiniSessionState,
-    deriveDirectionalChains,
-    nextMessageKey,
+  MiniSessionState,
+  deriveDirectionalChains,
+  nextMessageKey,
 } from "./session/sessionState";
 import { SessionStore } from "./session/sessionStore";
 import { X3DHManager } from "./session/x3dh";
@@ -97,6 +100,61 @@ function showNotifications() {
 function clearAllNotifications() {
   notifications.length = 0;
   console.log("所有非当前会话提醒已清空。");
+}
+
+function fingerprint(publicKeyBase64: string) {
+  const hash = crypto
+    .createHash("sha256")
+    .update(Buffer.from(publicKeyBase64, "base64"))
+    .digest("hex")
+    .toUpperCase();
+
+  return hash.slice(0, 48).match(/.{1,4}/g)?.join(" ") ?? hash;
+}
+
+function getLocalIdentityPublicKeyBase64() {
+  return Buffer.from(
+    identity.getPrivateKey().getPublicKey().serialize()
+  ).toString("base64");
+}
+
+function getTrustedIdentityPublicKeyBase64(
+  peerUserId: string,
+  peerDeviceId: string
+) {
+  const file = path.join(
+    process.cwd(),
+    "storage",
+    `trusted_identities_${userId}_${deviceId}.json`
+  );
+
+  if (!fs.existsSync(file)) {
+    return null;
+  }
+
+  try {
+    const trusted = JSON.parse(fs.readFileSync(file, "utf8"));
+
+    const colonKey = `${peerUserId}:${peerDeviceId}`;
+    const slashKey = `${peerUserId}/${peerDeviceId}`;
+    const underlineKey = `${peerUserId}_${peerDeviceId}`;
+
+    if (typeof trusted[colonKey] === "string") {
+      return trusted[colonKey];
+    }
+
+    if (typeof trusted[slashKey] === "string") {
+      return trusted[slashKey];
+    }
+
+    if (typeof trusted[underlineKey] === "string") {
+      return trusted[underlineKey];
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function clearNotificationsFrom(peerId: string, peerDeviceId: string) {
@@ -1266,6 +1324,7 @@ ws.on("message", (data) => {
           text: plaintext,
           timestamp: Date.now(),
           messageNumber: msg.messageNumber,
+          read: false,
         });
 
         ws.send(
@@ -1326,7 +1385,7 @@ ws.on("message", (data) => {
       Number(msg.previousSendCounter ?? 0)
       );
       
-      MessageStore.append(msg.from, msg.fromDeviceId, userId, deviceId, {
+      MessageStore.append(userId, deviceId, msg.from, msg.fromDeviceId, {
         direction: "in",
         from: msg.from,
         fromDeviceId: msg.fromDeviceId,
@@ -1335,6 +1394,7 @@ ws.on("message", (data) => {
         text: plaintext,
         timestamp: Date.now(),
         messageNumber: msg.messageNumber,
+        read: false,
       });
 
       ws.send(
@@ -1407,15 +1467,15 @@ ws.on("message", (data) => {
 
       try {
         const plaintext = decryptIncoming(
-        item.from,
-        item.fromDeviceId,
-        item.messageNumber,
-        item.payload,
-        item.ratchetPublicKey ?? null,
-        Number(item.previousSendCounter ?? 0)
-      );
-        
-        MessageStore.append(item.from, item.fromDeviceId, userId, deviceId, {
+          item.from,
+          item.fromDeviceId,
+          item.messageNumber,
+          item.payload,
+          item.ratchetPublicKey ?? null,
+          Number(item.previousSendCounter ?? 0)
+        );
+
+        MessageStore.append(userId, deviceId, item.from, item.fromDeviceId, {
           direction: "in",
           from: item.from,
           fromDeviceId: item.fromDeviceId,
@@ -1424,6 +1484,7 @@ ws.on("message", (data) => {
           text: plaintext,
           timestamp: Date.now(),
           messageNumber: item.messageNumber,
+          read: false,
         });
 
         ws.send(
@@ -1523,6 +1584,35 @@ rl.on("line", (line) => {
     return;
   }
 
+  if (text === "/verify") {
+    const localKey = getLocalIdentityPublicKeyBase64();
+    const peerKey = getTrustedIdentityPublicKeyBase64(targetId, targetDeviceId);
+
+    console.log();
+    console.log("当前会话安全验证码：");
+    console.log();
+
+    console.log(`本机 ${userId}/${deviceId}:`);
+    console.log(fingerprint(localKey));
+    console.log();
+
+    console.log(`对方 ${targetId}/${targetDeviceId}:`);
+
+    if (!peerKey) {
+      console.log("尚未建立信任关系，请先发送或接收一条消息。");
+      rl.prompt();
+      return;
+    }
+
+    console.log(fingerprint(peerKey));
+    console.log();
+
+    console.log("请让对方也输入 /verify，对比双方显示的验证码是否一致。");
+
+    rl.prompt();
+    return;
+  }
+
   if (text === "/trust-reset") {
     TrustedIdentityStore.forget(userId, deviceId, targetId, targetDeviceId);
     clearLocalSession();
@@ -1559,14 +1649,14 @@ rl.on("line", (line) => {
     return;
   }
 
-  for (const item of messages) {
+  messages.forEach((item: any, index: number) => {
     const time = new Date(item.timestamp).toLocaleString();
-    const status = item.direction === "out" ? item.status ?? "sent" : "received";
+    const status = item.direction === "out" ? item.status ?? "sent" : item.status ?? "received";
 
     console.log(
-      `[${time}] ${item.from}/${item.fromDeviceId} -> ${item.to}/${item.toDeviceId}: ${item.text} [${status}]`
+      `[${index + 1}] [${time}] #${item.messageNumber} ${item.from}/${item.fromDeviceId} -> ${item.to}/${item.toDeviceId}: ${item.text} [${status}]`
     );
-  }
+  });
 
   const unreadIncoming = messages.filter((item: any) => {
     return (
@@ -1648,6 +1738,50 @@ rl.on("line", (line) => {
     MessageStore.save(userId, deviceId, targetId, targetDeviceId, messages);
 
     console.log(`已标记 ${unreadIncoming.length} 条消息为已读，并发送已读回执。`);
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/clearHistory") {
+    MessageStore.clear(userId, deviceId, targetId, targetDeviceId);
+
+    console.log(`已清空当前会话历史：${targetId}/${targetDeviceId}`);
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/clearHistoryAll") {
+    MessageStore.clearAllForDevice(userId, deviceId);
+
+    console.log(`已清空 ${userId}/${deviceId} 的所有聊天历史。`);
+    rl.prompt();
+    return;
+  }
+
+  if (text.startsWith("/deleteMessage ")) {
+    const parts = text.trim().split(" ");
+    const index = Number(parts[1]);
+
+    if (Number.isNaN(index)) {
+      console.log("用法：/deleteMessage <历史列表序号>");
+      rl.prompt();
+      return;
+    }
+
+    const deleted = MessageStore.deleteByIndex(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId,
+      index
+    );
+
+    if (!deleted) {
+      console.log(`没有找到第 ${index} 条历史消息。`);
+    } else {
+      console.log(`已删除第 ${index} 条消息：${deleted.text}`);
+    }
+
     rl.prompt();
     return;
   }

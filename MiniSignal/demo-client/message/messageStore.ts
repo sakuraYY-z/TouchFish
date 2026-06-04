@@ -64,8 +64,23 @@ export class MessageStore {
       }
     }
 
-    messages.push(record);
+    // 防重复逻辑：检查是否已存在相同的消息
+    const exists = messages.some((item: any) => {
+      return (
+        item.direction === record.direction &&
+        item.from === record.from &&
+        item.fromDeviceId === record.fromDeviceId &&
+        item.to === record.to &&
+        item.toDeviceId === record.toDeviceId &&
+        item.messageNumber === record.messageNumber
+      );
+    });
 
+    if (exists) {
+      return;
+    }
+
+    messages.push(record);
     fs.writeFileSync(file, JSON.stringify(messages, null, 2), "utf8");
   }
 
@@ -168,5 +183,105 @@ export class MessageStore {
     }
 
     return updated;
+  }
+
+  static clear(
+    localUserId: string,
+    localDeviceId: string,
+    peerUserId: string,
+    peerDeviceId: string
+  ) {
+    const file = this.getPath(
+      localUserId,
+      localDeviceId,
+      peerUserId,
+      peerDeviceId
+    );
+
+    if (fs.existsSync(file)) {
+      fs.unlinkSync(file);
+    }
+  }
+
+  static clearAllForDevice(localUserId: string, localDeviceId: string) {
+    const storageDir = this.storageDir();
+    
+    if (!fs.existsSync(storageDir)) {
+      return;
+    }
+
+    const prefix = `messages_${localUserId}_${localDeviceId}__`;
+
+    const files = fs.readdirSync(storageDir);
+
+    for (const file of files) {
+      if (file.startsWith(prefix) && file.endsWith(".json")) {
+        fs.unlinkSync(path.join(storageDir, file));
+      }
+    }
+  }
+
+  static deleteByMessageNumber(
+    localUserId: string,
+    localDeviceId: string,
+    peerUserId: string,
+    peerDeviceId: string,
+    messageNumber: number
+  ) {
+    const messages = this.load(
+      localUserId,
+      localDeviceId,
+      peerUserId,
+      peerDeviceId
+    );
+
+    const before = messages.length;
+
+    const nextMessages = messages.filter((item: any) => {
+      return item.messageNumber !== messageNumber;
+    });
+
+    this.save(
+      localUserId,
+      localDeviceId,
+      peerUserId,
+      peerDeviceId,
+      nextMessages
+    );
+
+    return before - nextMessages.length;
+  }
+
+  static deleteByIndex(
+    localUserId: string,
+    localDeviceId: string,
+    peerUserId: string,
+    peerDeviceId: string,
+    index: number
+  ) {
+    const messages = this.load(
+      localUserId,
+      localDeviceId,
+      peerUserId,
+      peerDeviceId
+    );
+
+    const realIndex = index - 1;
+
+    if (realIndex < 0 || realIndex >= messages.length) {
+      return null;
+    }
+
+    const deleted = messages.splice(realIndex, 1)[0];
+
+    this.save(
+      localUserId,
+      localDeviceId,
+      peerUserId,
+      peerDeviceId,
+      messages
+    );
+
+    return deleted;
   }
 }

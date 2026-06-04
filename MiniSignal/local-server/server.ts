@@ -132,6 +132,24 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    if (message.type === "getDevices") {
+      const targetUserId = String(message.target);
+      const devices = users.getRegisteredDevices(targetUserId);
+
+      send(ws, {
+        type: "device-list",
+        target: targetUserId,
+        devices: devices.map((item) => ({
+          userId: item.userId,
+          deviceId: item.deviceId,
+          online: users.getDevice(item.userId, item.deviceId) ? true : false,
+          lastSeen: item.lastSeen,
+        })),
+      });
+
+      return;
+    }
+
     if (message.type === "uploadPreKeyBundle") {
       const userId = String(message.userId);
       const deviceId = String(message.deviceId ?? "default");
@@ -345,6 +363,30 @@ wss.on("connection", (ws) => {
         messageNumber: cipherMessage.messageNumber,
         status,
       });
+      return;
+    }
+
+    if (message.type === "receipt") {
+      const target = users.getDevice(
+        String(message.to),
+        String(message.toDeviceId ?? "default")
+      );
+
+      const payload = {
+        type: "receipt",
+        receiptType: String(message.receiptType),
+        from: String(message.from),
+        fromDeviceId: String(message.fromDeviceId ?? "default"),
+        to: String(message.to),
+        toDeviceId: String(message.toDeviceId ?? "default"),
+        messageNumber: Number(message.messageNumber),
+        timestamp: Number(message.timestamp ?? Date.now()),
+      };
+
+      if (target && target.ws.readyState === WebSocket.OPEN) {
+        send(target.ws, payload);
+      }
+
       return;
     }
 
