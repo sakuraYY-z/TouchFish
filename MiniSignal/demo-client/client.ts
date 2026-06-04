@@ -1089,7 +1089,7 @@ ws.on("message", (data) => {
         `${targetId}/${targetDeviceId} 的 identityKey 和本地信任记录不一致。`
       );
       console.error("这可能是对方重装、换设备，也可能是中间人攻击。");
-      console.error(`当前会话建立已被拒绝。`);
+      console.error("当前会话建立已被拒绝。");
       console.error(`确认安全后请输入：/trust ${targetId} ${targetDeviceId}`);
       console.error();
 
