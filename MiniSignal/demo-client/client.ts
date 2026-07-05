@@ -1,7 +1,7 @@
+import { PrivateKey, PublicKey } from "@signalapp/libsignal-client";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import crypto from "crypto";
-import { PrivateKey, PublicKey } from "@signalapp/libsignal-client";
 import readline from "readline";
 import WebSocket from "ws";
 import { ContactStore } from "./contact/contactStore";
@@ -674,6 +674,7 @@ function decryptIncoming(
   previousSendCounter: number = 0
 ) {
   const oldSession = session;
+  const wasCurrentConversation = isCurrentConversation(from, fromDeviceId);
 
   session = SessionStore.load(
     userId,
@@ -687,20 +688,21 @@ function decryptIncoming(
     throw new Error(`session not established for ${from}/${fromDeviceId}`);
   }
 
-  if (!session.skippedMessageKeys) {
-  session.skippedMessageKeys = {};
-  }
+  try {
+    if (!session.skippedMessageKeys) {
+      session.skippedMessageKeys = {};
+    }
 
-  ensureReplayProtectionState();
+    ensureReplayProtectionState();
 
-  const id = messageId(
-    from,
-    fromDeviceId,
-    remoteRatchetPublicKey,
-    messageNumber
-  );
+    const id = messageId(
+      from,
+      fromDeviceId,
+      remoteRatchetPublicKey,
+      messageNumber
+    );
 
-  assertNotReplayed(id);
+    assertNotReplayed(id);
 
   /**
    * 1. 如果是已经跳过保存过的旧消息，直接用 skipped key 解密。
@@ -769,11 +771,12 @@ function decryptIncoming(
   markMessageProcessed(id);
   saveSession();
 
-  if (!isCurrentConversation(from, fromDeviceId)) {
-    session = oldSession;
-  }
-
   return plaintext;
+  } finally {
+    if (!wasCurrentConversation) {
+      session = oldSession;
+    }
+  }
 }
 
 function sendChat(line: string) {
@@ -848,6 +851,32 @@ function parsePublicKey(value: string | null | undefined) {
   }
 
   return PublicKey.deserialize(Buffer.from(value, "base64"));
+}
+
+function normalizeOneTimePreKey(bundle: any) {
+  const publicKey =
+    typeof bundle.oneTimePreKey === "string"
+      ? bundle.oneTimePreKey
+      : bundle.oneTimePreKey?.publicKey ?? null;
+
+  const rawKeyId =
+    bundle.oneTimePreKeyId !== undefined && bundle.oneTimePreKeyId !== null
+      ? bundle.oneTimePreKeyId
+      : bundle.oneTimePreKey?.keyId ?? null;
+
+  const keyId = rawKeyId !== null ? Number(rawKeyId) : null;
+
+  if (!publicKey || keyId === null || !Number.isFinite(keyId)) {
+    return {
+      publicKey: null,
+      keyId: null,
+    };
+  }
+
+  return {
+    publicKey,
+    keyId,
+  };
 }
 
 function verifySignedPreKeySignature(input: {
@@ -994,11 +1023,11 @@ ws.on("message", (data) => {
 
     ws.send(
       JSON.stringify({
-        type: "session-reset-confirm",
+        type: "session-reset-ok",
         from: userId,
         fromDeviceId: deviceId,
-        to: msg.from,
-        toDeviceId: msg.fromDeviceId,
+        target: msg.from,
+        targetDeviceId: msg.fromDeviceId,
       })
     );
 
@@ -1178,13 +1207,16 @@ ws.on("message", (data) => {
       return;
     }
       
-    const remoteOneTimePreKey = msg.bundle.oneTimePreKey
-      ? parsePublicKey(msg.bundle.oneTimePreKey.publicKey)
+    const normalizedOneTimePreKey = normalizeOneTimePreKey(msg.bundle);
+
+    const remoteOneTimePreKey = normalizedOneTimePreKey.publicKey
+      ? parsePublicKey(normalizedOneTimePreKey.publicKey)
       : null;
 
-    const usedOneTimePreKeyId = msg.bundle.oneTimePreKey
-      ? Number(msg.bundle.oneTimePreKey.keyId)
-      : null;
+    const usedOneTimePreKeyId =
+      remoteOneTimePreKey && normalizedOneTimePreKey.keyId !== null
+        ? normalizedOneTimePreKey.keyId
+        : null;
 
     const result = X3DHManager.initiator(
         identity.getPrivateKey(),
@@ -1310,10 +1342,16 @@ ws.on("message", (data) => {
       console.log("X3DH init signature verified");
 
       const signedPreKeyId = Number(msg.usedSignedPreKeyId ?? 1);
-      const usedOneTimePreKeyId =
-        msg.usedOneTimePreKeyId === null
-          ? null
-          : Number(msg.usedOneTimePreKeyId);
+      
+      const usedOneTimePreKey =
+        msg.usedOneTimePreKey === true &&
+        msg.usedOneTimePreKeyId !== null &&
+        msg.usedOneTimePreKeyId !== undefined &&
+        msg.usedOneTimePreKeyId !== "";
+
+      const usedOneTimePreKeyId = usedOneTimePreKey
+        ? Number(msg.usedOneTimePreKeyId)
+        : null;
 
       const signedPreKeyPrivate = preKeys.getSignedPreKeyPrivate(signedPreKeyId);
 
@@ -1324,20 +1362,25 @@ ws.on("message", (data) => {
         return;
       }
 
-      const oneTimePreKeyPrivate =
-        usedOneTimePreKeyId === null
-          ? null
-          : preKeys.getOneTimePreKeyPrivate(usedOneTimePreKeyId);
+      const oneTimePreKeyPrivate = usedOneTimePreKey
+        ? preKeys.getOneTimePreKeyPrivate(usedOneTimePreKeyId)
+        : null;
 
-      if (msg.usedOneTimePreKey && !oneTimePreKeyPrivate) {
+      if (usedOneTimePreKey && !oneTimePreKeyPrivate) {
         console.error(
           `X3DH init rejected: missing oneTimePreKey private key ${usedOneTimePreKeyId}`
         );
         return;
       }
 
+      if (!usedOneTimePreKey) {
+        console.warn(
+          `X3DH init from ${msg.from}/${msg.fromDeviceId} did not use oneTimePreKey, signedPreKey fallback mode.`
+        );
+      }
+
       console.log(
-        `X3DH responder keys: signedPreKeyId=${signedPreKeyId}, oneTimePreKeyId=${usedOneTimePreKeyId}, usedOneTimePreKey=${usedOneTimePreKeyId !== null}, hasOneTimePrivate=${!!oneTimePreKeyPrivate}`
+        `X3DH responder keys: signedPreKeyId=${signedPreKeyId}, oneTimePreKeyId=${usedOneTimePreKeyId}, usedOneTimePreKey=${usedOneTimePreKey}, hasOneTimePrivate=${!!oneTimePreKeyPrivate}`
       );
 
       const rootKey = X3DHManager.responder(
@@ -1355,20 +1398,9 @@ ws.on("message", (data) => {
         msg.ratchetPublicKey ?? null
       );
 
-      preKeys.consumeOneTimePreKey(usedOneTimePreKeyId);
-
-      const usedOneTimePreKey =
-        msg.usedOneTimePreKeyId !== null &&
-        msg.usedOneTimePreKeyId !== undefined &&
-        msg.usedOneTimePreKeyId !== "";
-
       if (usedOneTimePreKey) {
-        preKeys.consumeOneTimePreKey(Number(msg.usedOneTimePreKeyId));
+        preKeys.consumeOneTimePreKey(usedOneTimePreKeyId);
         ensureAndUploadPreKeys();
-      } else {
-        console.warn(
-          `X3DH init from ${msg.from}/${msg.fromDeviceId} did not use oneTimePreKey, signedPreKey fallback mode.`
-        );
       }
 
       console.log("X3DH responder session established");
