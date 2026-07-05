@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+*.log
+MiniSignal/demo-client/storage/
+MiniSignal/demo-client/prekey-storage/
+MiniSignal/local-server/storage/
