@@ -1,79 +1,23 @@
-import fs from "fs";
-import path from "path";
 import WebSocket, { WebSocketServer } from "ws";
+import {
+  consumeOneTimePreKey,
+  countOneTimePreKeys,
+  getPreKeyBundle,
+  saveOrMergePreKeyBundle,
+} from "./db";
 import { CipherMessage, RelayQueue } from "./relay";
 import { UserRegistry } from "./users";
 
-interface OneTimePreKeyPublic {
-  keyId: number;
-  publicKey: string;
-}
-
-interface PreKeyBundle {
-  identityKey: string;
-  signedPreKeyId: number;
-  signedPreKey: string;
-  signedPreKeySignature: string;
-  oneTimePreKeys: OneTimePreKeyPublic[];
-}
-
 const wss = new WebSocketServer({ port: 8080 });
+
 const users = new UserRegistry();
 const relay = new RelayQueue();
-
-const bundles = new Map<string, PreKeyBundle>();
-
-const storageDir = path.join(__dirname, "storage");
-const bundleStoragePath = path.join(storageDir, "prekey_bundles.json");
-
-function saveBundles() {
-  if (!fs.existsSync(storageDir)) {
-    fs.mkdirSync(storageDir, { recursive: true });
-  }
-
-  const objectData: Record<string, PreKeyBundle> = {};
-
-  for (const [key, bundle] of bundles.entries()) {
-    objectData[key] = bundle;
-  }
-
-  fs.writeFileSync(
-    bundleStoragePath,
-    JSON.stringify(objectData, null, 2),
-    "utf8"
-  );
-}
-
-function loadBundles() {
-  if (!fs.existsSync(bundleStoragePath)) {
-    return;
-  }
-
-  try {
-    const data = JSON.parse(fs.readFileSync(bundleStoragePath, "utf8"));
-
-    for (const key of Object.keys(data)) {
-      bundles.set(key, data[key]);
-    }
-
-    console.log(`prekey bundles loaded: ${bundles.size}`);
-  } catch {
-    console.log("failed to load prekey bundles, starting empty");
-    bundles.clear();
-  }
-}
-
-function deviceKey(userId: string, deviceId: string) {
-  return `${userId}:${deviceId}`;
-}
 
 function send(ws: WebSocket, payload: unknown) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(payload));
   }
 }
-
-loadBundles();
 
 console.log("MiniSignal Server Running: ws://localhost:8080");
 
@@ -86,7 +30,10 @@ wss.on("connection", (ws) => {
     try {
       message = JSON.parse(data.toString());
     } catch {
-      send(ws, { type: "error", error: "invalid json" });
+      send(ws, {
+        type: "error",
+        error: "invalid json",
+      });
       return;
     }
 
@@ -105,6 +52,7 @@ wss.on("connection", (ws) => {
       });
 
       const offline = relay.pull(userId, deviceId);
+
       for (const item of offline) {
         send(ws, item);
       }
@@ -142,6 +90,7 @@ wss.on("connection", (ws) => {
         devices: devices.map((item) => ({
           userId: item.userId,
           deviceId: item.deviceId,
+          publicKey: item.publicKey ?? null,
           online: users.getDevice(item.userId, item.deviceId) ? true : false,
           lastSeen: item.lastSeen,
         })),
@@ -155,49 +104,16 @@ wss.on("connection", (ws) => {
       const deviceId = String(message.deviceId ?? "default");
 
       if (!message.bundle) {
-        send(ws, { type: "error", error: "missing bundle" });
+        send(ws, {
+          type: "error",
+          error: "missing bundle",
+        });
         return;
       }
 
-      const key = deviceKey(userId, deviceId);
-      const existing = bundles.get(key);
+      saveOrMergePreKeyBundle(userId, deviceId, message.bundle);
 
-      if (!existing) {
-        bundles.set(key, message.bundle);
-      } else {
-        const identityChanged = existing.identityKey !== message.bundle.identityKey;
-        const signedPreKeyChanged =
-          existing.signedPreKey !== message.bundle.signedPreKey ||
-          Number(existing.signedPreKeyId) !== Number(message.bundle.signedPreKeyId);
-
-        if (identityChanged || signedPreKeyChanged) {
-          bundles.set(key, message.bundle);
-
-          console.log(
-            `${userId} (${deviceId}) uploaded new identity/signedPreKey, bundle replaced`
-          );
-        } else {
-          const existingIds = new Set(
-            existing.oneTimePreKeys.map((item: any) => Number(item.keyId))
-          );
-
-          const newKeys = (message.bundle.oneTimePreKeys ?? []).filter(
-            (item: any) => !existingIds.has(Number(item.keyId))
-          );
-
-          existing.oneTimePreKeys.push(...newKeys);
-          existing.identityKey = message.bundle.identityKey;
-          existing.signedPreKeyId = Number(
-            message.bundle.signedPreKeyId ?? existing.signedPreKeyId ?? 1
-          );
-          existing.signedPreKey = message.bundle.signedPreKey;
-          existing.signedPreKeySignature = message.bundle.signedPreKeySignature;
-
-          bundles.set(key, existing);
-        }
-      }
-
-      saveBundles();
+      const remaining = countOneTimePreKeys(userId, deviceId);
 
       send(ws, {
         type: "uploadPreKeyBundle-ok",
@@ -206,18 +122,17 @@ wss.on("connection", (ws) => {
       });
 
       console.log(
-        `${userId} (${deviceId}) uploaded bundle, oneTimePreKeys=${
-          bundles.get(key)?.oneTimePreKeys.length ?? 0
-        }`
+        `${userId} (${deviceId}) uploaded bundle, oneTimePreKeys=${remaining}`
       );
+
       return;
     }
 
     if (message.type === "getPreKeyBundle") {
       const target = String(message.target);
       const targetDeviceId = String(message.targetDeviceId ?? "default");
-      const key = deviceKey(target, targetDeviceId);
-      const bundle = bundles.get(key);
+
+      const bundle = getPreKeyBundle(target, targetDeviceId);
 
       if (!bundle) {
         send(ws, {
@@ -229,24 +144,24 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      /**
-       * 多 OneTimePreKey 池：
-       * 每次从数组里取出一个 oneTimePreKey，并从服务端删除。
-       */
-      const selectedOneTimePreKey = bundle.oneTimePreKeys.shift() ?? null;
+      const selectedOneTimePreKey = consumeOneTimePreKey(
+        target,
+        targetDeviceId
+      );
 
       const responseBundle = {
         identityKey: bundle.identityKey,
         signedPreKeyId: bundle.signedPreKeyId,
         signedPreKey: bundle.signedPreKey,
         signedPreKeySignature: bundle.signedPreKeySignature,
-        oneTimePreKeyId: selectedOneTimePreKey ? selectedOneTimePreKey.keyId : null,
-        oneTimePreKey: selectedOneTimePreKey ? selectedOneTimePreKey.publicKey : null,
+        oneTimePreKeyId: selectedOneTimePreKey
+          ? selectedOneTimePreKey.keyId
+          : null,
+        oneTimePreKey: selectedOneTimePreKey
+          ? selectedOneTimePreKey.publicKey
+          : null,
         hasOneTimePreKey: !!selectedOneTimePreKey,
       };
-
-      bundles.set(key, bundle);
-      saveBundles();
 
       if (selectedOneTimePreKey) {
         console.log(
@@ -284,7 +199,8 @@ wss.on("connection", (ws) => {
         signature: message.signature,
         usedOneTimePreKey: Boolean(message.usedOneTimePreKey),
         usedOneTimePreKeyId:
-          message.usedOneTimePreKeyId !== null && message.usedOneTimePreKeyId !== undefined
+          message.usedOneTimePreKeyId !== null &&
+          message.usedOneTimePreKeyId !== undefined
             ? Number(message.usedOneTimePreKeyId)
             : null,
         usedSignedPreKeyId: Number(message.usedSignedPreKeyId ?? 1),
@@ -293,8 +209,12 @@ wss.on("connection", (ws) => {
       if (target && target.ws.readyState === WebSocket.OPEN) {
         send(target.ws, payload);
       } else {
-        send(ws, { type: "error", error: "target offline for x3dh-init" });
+        send(ws, {
+          type: "error",
+          error: "target offline for x3dh-init",
+        });
       }
+
       return;
     }
 
@@ -316,6 +236,7 @@ wss.on("connection", (ws) => {
 
       if (target && target.ws.readyState === WebSocket.OPEN) {
         send(target.ws, payload);
+
         send(ws, {
           type: "session-reset-status",
           status: "delivered",
@@ -367,14 +288,13 @@ wss.on("connection", (ws) => {
       };
 
       const status = relay.deliverOrQueue(users, cipherMessage);
-      
-      
-      
+
       send(ws, {
         type: "message-status",
         messageNumber: cipherMessage.messageNumber,
         status,
       });
+
       return;
     }
 
@@ -405,16 +325,26 @@ wss.on("connection", (ws) => {
     if (message.type === "pull") {
       const userId = String(message.userId);
       const deviceId = String(message.deviceId ?? "default");
+
       const messages = relay.pull(userId, deviceId);
-      send(ws, { type: "pull-result", messages });
+
+      send(ws, {
+        type: "pull-result",
+        messages,
+      });
+
       return;
     }
 
-    send(ws, { type: "error", error: `unknown type: ${message.type}` });
+    send(ws, {
+      type: "error",
+      error: `unknown type: ${message.type}`,
+    });
   });
 
   ws.on("close", () => {
     const removed = users.removeSocket(ws);
+
     if (removed) {
       console.log(`client disconnected: ${removed.userId} (${removed.deviceId})`);
     } else {

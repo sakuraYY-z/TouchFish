@@ -1,103 +1,20 @@
-import fs from "fs";
-import path from "path";
 import WebSocket from "ws";
+import {
+  CipherMessage,
+  enqueueOfflineMessage,
+  pullOfflineMessages,
+} from "./db";
 import { UserRegistry } from "./users";
 
-export interface CipherMessage {
-  type: "message";
-  from: string;
-  fromDeviceId: string;
-  target: string;
-  targetDeviceId: string;
-  ratchetPublicKey?: string | null;
-  previousSendCounter?: number;
-  messageNumber: number;
-  payload: {
-    encrypted: string;
-    iv: string;
-    tag: string;
-  };
-  timestamp: number;
-}
+export { CipherMessage };
 
 export class RelayQueue {
-  private queues = new Map<string, CipherMessage[]>();
-  private storageDir = path.join(__dirname, "storage");
-  private storagePath = path.join(this.storageDir, "offline_messages.json");
-
-  constructor() {
-    this.load();
-  }
-
-  private key(userId: string, deviceId: string) {
-    return `${userId}:${deviceId}`;
-  }
-
-  private save() {
-    if (!fs.existsSync(this.storageDir)) {
-      fs.mkdirSync(this.storageDir, { recursive: true });
-    }
-
-    const objectData: Record<string, CipherMessage[]> = {};
-
-    for (const [key, messages] of this.queues.entries()) {
-      objectData[key] = messages;
-    }
-
-    fs.writeFileSync(
-      this.storagePath,
-      JSON.stringify(objectData, null, 2),
-      "utf8"
-    );
-  }
-
-  private load() {
-    if (!fs.existsSync(this.storagePath)) {
-      return;
-    }
-
-    try {
-      const data = JSON.parse(fs.readFileSync(this.storagePath, "utf8"));
-
-      for (const key of Object.keys(data)) {
-        this.queues.set(key, data[key]);
-      }
-
-      console.log(`offline messages loaded: ${this.totalMessages()}`);
-    } catch {
-      console.log("failed to load offline messages, starting with empty queue");
-      this.queues.clear();
-    }
-  }
-
-  private totalMessages() {
-    let total = 0;
-
-    for (const messages of this.queues.values()) {
-      total += messages.length;
-    }
-
-    return total;
-  }
-
   enqueue(message: CipherMessage) {
-    const key = this.key(message.target, message.targetDeviceId);
-    const queue = this.queues.get(key) ?? [];
-
-    queue.push(message);
-    this.queues.set(key, queue);
-
-    this.save();
+    enqueueOfflineMessage(message);
   }
 
   pull(userId: string, deviceId: string) {
-    const key = this.key(userId, deviceId);
-    const queue = this.queues.get(key) ?? [];
-
-    this.queues.delete(key);
-    this.save();
-
-    return queue;
+    return pullOfflineMessages(userId, deviceId);
   }
 
   deliverOrQueue(registry: UserRegistry, message: CipherMessage) {
