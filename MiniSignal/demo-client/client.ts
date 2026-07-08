@@ -180,6 +180,56 @@ function addPeer(
   }
 }
 
+function safeFileName(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function exportCurrentChat() {
+  const messages = MessageStore.list(
+    userId,
+    deviceId,
+    targetId,
+    targetDeviceId
+  );
+
+  const exportDir = path.join(__dirname, "storage", "exports");
+
+  if (!fs.existsSync(exportDir)) {
+    fs.mkdirSync(exportDir, { recursive: true });
+  }
+
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/:/g, "-")
+    .replace(/\./g, "-");
+
+  const fileName =
+    `${safeFileName(userId)}_${safeFileName(deviceId)}__` +
+    `${safeFileName(targetId)}_${safeFileName(targetDeviceId)}_` +
+    `${timestamp}.json`;
+
+  const outputPath = path.join(exportDir, fileName);
+
+  const data = {
+    exportedAt: new Date().toISOString(),
+    local: {
+      userId,
+      deviceId,
+    },
+    remote: {
+      userId: targetId,
+      deviceId: targetDeviceId,
+    },
+    messageCount: messages.length,
+    messages,
+  };
+
+  fs.writeFileSync(outputPath, JSON.stringify(data, null, 2), "utf8");
+
+  console.log("当前会话聊天记录已导出：");
+  console.log(outputPath);
+}
+
 function showChats() {
   const peers = new Map<string, { userId: string; deviceId: string }>();
 
@@ -1996,6 +2046,12 @@ rl.on("line", (line) => {
     console.log("DEBUG: 已清空本机 oneTimePreKeys，并重新上传 PreKeyBundle。");
     console.log("注意：这是测试命令，只用于验证 signedPreKey fallback。");
 
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/export") {
+    exportCurrentChat();
     rl.prompt();
     return;
   }
