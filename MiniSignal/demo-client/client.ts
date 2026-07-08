@@ -18,6 +18,7 @@ import {
 } from "./session/sessionState";
 import { SessionStore } from "./session/sessionStore";
 import { X3DHManager } from "./session/x3dh";
+import { ChatMetaStore } from "./storage/chatMetaStore";
 import { NotificationStore } from "./storage/notificationStore";
 
 const userId = process.argv[2];
@@ -359,6 +360,7 @@ function showChats() {
         item.fromDeviceId === peer.deviceId &&
         item.read !== true
       );
+      
     });
 
     const unreadNotifications = NotificationStore.unread(userId, deviceId)
@@ -376,6 +378,12 @@ function showChats() {
     const lastTimestamp = lastMessage
       ? Number(lastMessage.timestamp)
       : 0;
+    const pinned = ChatMetaStore.isPinned(
+      userId,
+      deviceId,
+      peer.userId,
+      peer.deviceId
+    );
 
     return {
       peer,
@@ -384,18 +392,28 @@ function showChats() {
       unreadNotifications,
       lastMessage,
       lastTimestamp,
+      pinned,
     };
   });
 
-  summaries.sort((a, b) => b.lastTimestamp - a.lastTimestamp);
+  summaries.sort((a, b) => {
+    if (a.pinned !== b.pinned) {
+      return a.pinned ? -1 : 1;
+    }
+
+    return b.lastTimestamp - a.lastTimestamp;
+  });
 
   console.log("===== CHATS =====");
 
   for (const item of summaries) {
     const current =
       item.peer.userId === targetId && item.peer.deviceId === targetDeviceId;
+    const pinMark = item.pinned ? "[置顶] " : "";
 
-    console.log(`${current ? "*" : "-"} ${item.peer.userId}/${item.peer.deviceId}`);
+    console.log(
+      `${current ? "*" : "-"} ${pinMark}${item.peer.userId}/${item.peer.deviceId}`
+    );
     console.log(`  未读消息: ${item.unreadMessages.length}`);
     console.log(`  未读提醒: ${item.unreadNotifications.length}`);
 
@@ -2316,6 +2334,34 @@ rl.on("line", (line) => {
 
   if (text === "/chats") {
     showChats();
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/pin") {
+    ChatMetaStore.setPinned(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId,
+      true
+    );
+
+    console.log(`已置顶当前会话：${targetId}/${targetDeviceId}`);
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/unpin") {
+    ChatMetaStore.setPinned(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId,
+      false
+    );
+
+    console.log(`已取消置顶当前会话：${targetId}/${targetDeviceId}`);
     rl.prompt();
     return;
   }
