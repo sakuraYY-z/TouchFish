@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import assert from "assert";
 
 import { CryptoManager } from "../demo-client/crypto/crypto";
@@ -8,15 +10,20 @@ import {
   CipherMessage,
   consumeOneTimePreKey,
   countOneTimePreKeys,
+  createDatabaseBackup,
+  deleteExpiredOfflineMessages,
   enqueueOfflineMessage,
   getPreKeyBundle,
   getRegisteredDevices,
   pullOfflineMessages,
+  resetDatabaseForTest,
   saveOrMergePreKeyBundle,
   saveRegisteredDevice,
 } from "../local-server/db";
 
 function testSQLiteStorage() {
+  resetDatabaseForTest();
+
   const suffix = Date.now();
 
   const userId = `test_user_${suffix}`;
@@ -99,6 +106,75 @@ function testSQLiteStorage() {
   assert.strictEqual(pulledAgain.length, 0);
 
   console.log("✅ SQLite 服务端数据库存储测试通过");
+  
+  resetDatabaseForTest();
+
+  const oldOfflineMessage: CipherMessage = {
+    type: "message",
+    from: "alice",
+    fromDeviceId: "desktop",
+    target: userId,
+    targetDeviceId: deviceId,
+    messageNumber: 100,
+    payload: {
+      encrypted: "old-encrypted-test",
+      iv: "old-iv-test",
+      tag: "old-tag-test",
+    },
+    timestamp: Date.now() - 10 * 24 * 60 * 60 * 1000,
+    ratchetPublicKey: "old-ratchet-public-key-test",
+    previousSendCounter: 0,
+  };
+
+  const newOfflineMessage: CipherMessage = {
+    type: "message",
+    from: "alice",
+    fromDeviceId: "desktop",
+    target: userId,
+    targetDeviceId: deviceId,
+    messageNumber: 101,
+    payload: {
+      encrypted: "new-encrypted-test",
+      iv: "new-iv-test",
+      tag: "new-tag-test",
+    },
+    timestamp: Date.now(),
+    ratchetPublicKey: "new-ratchet-public-key-test",
+    previousSendCounter: 0,
+  };
+
+  enqueueOfflineMessage(oldOfflineMessage);
+  enqueueOfflineMessage(newOfflineMessage);
+
+  const cleanupResult = deleteExpiredOfflineMessages(
+    7 * 24 * 60 * 60 * 1000
+  );
+
+  assert.strictEqual(cleanupResult.deleted, 1);
+
+  const remainingMessages = pullOfflineMessages(userId, deviceId);
+
+  assert.strictEqual(remainingMessages.length, 1);
+  assert.strictEqual(
+    remainingMessages[0].payload.encrypted,
+    "new-encrypted-test"
+  );
+
+  console.log("✅ SQLite 离线消息过期清理测试通过");
+
+  const backupDir = path.join(
+    process.cwd(),
+    "local-server",
+    "storage",
+    "test-backups"
+  );
+
+  const backupResult = createDatabaseBackup(backupDir);
+
+  assert.ok(fs.existsSync(backupResult.backupPath));
+  assert.ok(backupResult.sizeBytes > 0);
+
+  console.log("✅ SQLite 数据库备份测试通过");
 }
 function testCryptoEncryptDecrypt() {
   const secret = "test-shared-secret";

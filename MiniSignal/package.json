@@ -4,8 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "set TS_NODE_PROJECT=tsconfig.test.json&& node -r ts-node/register/transpile-only tests/run-tests.ts"
-  },
+  "test": "set NODE_ENV=test&& set MINISIGNAL_DB_PATH=local-server/storage/minisignal-test.db&& tsx tests/run-tests.ts",
+  "db:status": "tsx local-server/db-status.ts",
+  "db:cleanup": "tsx local-server/db-cleanup.ts",
+  "db:backup": "tsx local-server/db-backup.ts",
+  "db:restore": "tsx local-server/db-restore.ts",
+  "db:export": "tsx local-server/db-export.ts"
+ },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -13,6 +18,7 @@
   "devDependencies": {
     "@types/node": "^25.8.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.23.0", 
     "typescript": "^6.0.3"
   },
   "dependencies": {

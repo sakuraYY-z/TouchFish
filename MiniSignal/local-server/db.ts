@@ -39,13 +39,19 @@ export interface CipherMessage {
   timestamp: number;
 }
 
-const storageDir = path.join(__dirname, "storage");
+const defaultStorageDir = path.join(__dirname, "storage");
 
-if (!fs.existsSync(storageDir)) {
-  fs.mkdirSync(storageDir, { recursive: true });
+const configuredDbPath = process.env.MINISIGNAL_DB_PATH
+  ? path.resolve(process.cwd(), process.env.MINISIGNAL_DB_PATH)
+  : path.join(defaultStorageDir, "minisignal.db");
+
+const dbDir = path.dirname(configuredDbPath);
+
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const dbPath = path.join(storageDir, "minisignal.db");
+export const dbPath = configuredDbPath;
 
 export const db = new Database(dbPath);
 
@@ -92,6 +98,11 @@ CREATE TABLE IF NOT EXISTS offline_messages (
   previous_send_counter INTEGER NOT NULL DEFAULT 0,
   timestamp INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_offline_messages_target
+ON offline_messages(target_user_id, target_device_id, id);
+
+CREATE INDEX IF NOT EXISTS idx_offline_messages_sender
+ON offline_messages(from_user_id, from_device_id);
 `);
 
 export function saveRegisteredDevice(device: RegisteredDevice) {
@@ -378,4 +389,149 @@ export function countOfflineMessages(): number {
   `).get() as any;
 
   return Number(row.count);
+}
+
+export function resetDatabaseForTest() {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("resetDatabaseForTest can only be used in test environment");
+  }
+
+  db.exec(`
+    DELETE FROM offline_messages;
+    DELETE FROM one_time_prekeys;
+    DELETE FROM prekey_bundles;
+    DELETE FROM registered_devices;
+    DELETE FROM sqlite_sequence WHERE name = 'offline_messages';
+  `);
+}
+
+export function getDatabaseStats() {
+  const registeredDevices = db.prepare(`
+    SELECT COUNT(*) AS count FROM registered_devices
+  `).get() as any;
+
+  const preKeyBundles = db.prepare(`
+    SELECT COUNT(*) AS count FROM prekey_bundles
+  `).get() as any;
+
+  const oneTimePreKeys = db.prepare(`
+    SELECT COUNT(*) AS count FROM one_time_prekeys
+  `).get() as any;
+
+  const offlineMessages = db.prepare(`
+    SELECT COUNT(*) AS count FROM offline_messages
+  `).get() as any;
+
+  return {
+    dbPath,
+    registeredDevices: Number(registeredDevices.count),
+    preKeyBundles: Number(preKeyBundles.count),
+    oneTimePreKeys: Number(oneTimePreKeys.count),
+    offlineMessages: Number(offlineMessages.count),
+  };
+}
+
+export function deleteExpiredOfflineMessages(maxAgeMs: number) {
+  const cutoff = Date.now() - maxAgeMs;
+
+  const result = db.prepare(`
+    DELETE FROM offline_messages
+    WHERE timestamp < ?
+  `).run(cutoff);
+
+  return {
+    cutoff,
+    deleted: Number(result.changes),
+  };
+}
+
+export function createDatabaseBackup(backupDir?: string) {
+  const targetBackupDir =
+    backupDir ?? path.join(defaultStorageDir, "backups");
+
+  if (!fs.existsSync(targetBackupDir)) {
+    fs.mkdirSync(targetBackupDir, { recursive: true });
+  }
+
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/:/g, "-")
+    .replace(/\./g, "-");
+
+  const backupPath = path.join(
+    targetBackupDir,
+    `minisignal-backup-${timestamp}.db`
+  );
+
+  db.prepare("VACUUM INTO ?").run(backupPath);
+
+  const stat = fs.statSync(backupPath);
+
+  return {
+    backupPath,
+    sizeBytes: stat.size,
+    createdAt: Date.now(),
+  };
+}
+export function exportDatabaseSnapshot() {
+  const registeredDevices = db.prepare(`
+    SELECT
+      user_id AS userId,
+      device_id AS deviceId,
+      public_key AS publicKey,
+      last_seen AS lastSeen
+    FROM registered_devices
+    ORDER BY user_id, device_id
+  `).all();
+
+  const preKeyBundles = db.prepare(`
+    SELECT
+      user_id AS userId,
+      device_id AS deviceId,
+      identity_key AS identityKey,
+      signed_prekey_id AS signedPreKeyId,
+      signed_prekey AS signedPreKey,
+      signed_prekey_signature AS signedPreKeySignature
+    FROM prekey_bundles
+    ORDER BY user_id, device_id
+  `).all();
+
+  const oneTimePreKeys = db.prepare(`
+    SELECT
+      user_id AS userId,
+      device_id AS deviceId,
+      key_id AS keyId,
+      public_key AS publicKey
+    FROM one_time_prekeys
+    ORDER BY user_id, device_id, key_id
+  `).all();
+
+  const offlineMessages = db.prepare(`
+    SELECT
+      id,
+      from_user_id AS fromUserId,
+      from_device_id AS fromDeviceId,
+      target_user_id AS targetUserId,
+      target_device_id AS targetDeviceId,
+      message_number AS messageNumber,
+      encrypted,
+      iv,
+      tag,
+      ratchet_public_key AS ratchetPublicKey,
+      previous_send_counter AS previousSendCounter,
+      timestamp
+    FROM offline_messages
+    ORDER BY id
+  `).all();
+
+  return {
+    exportedAt: new Date().toISOString(),
+    dbPath,
+    tables: {
+      registeredDevices,
+      preKeyBundles,
+      oneTimePreKeys,
+      offlineMessages,
+    },
+  };
 }
