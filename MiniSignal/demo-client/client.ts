@@ -157,6 +157,102 @@ function showSearchResult(keyword: string) {
   console.log("=========================");
 }
 
+function showSearchAllResult(keyword: string) {
+  const searchKeyword = keyword.trim();
+
+  if (!searchKeyword) {
+    console.log("用法：/search-all <关键词>");
+    return;
+  }
+
+  const storageDir = path.join(__dirname, "storage");
+
+  if (!fs.existsSync(storageDir)) {
+    console.log("当前没有本地消息记录。");
+    return;
+  }
+
+  const prefix = `messages_${userId}_${deviceId}__`;
+
+  const files = fs
+    .readdirSync(storageDir)
+    .filter((file) => {
+      return file.startsWith(prefix) && file.endsWith(".json");
+    });
+
+  const results: any[] = [];
+
+  for (const file of files) {
+    const filePath = path.join(storageDir, file);
+
+    let messages: any[] = [];
+
+    try {
+      messages = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    } catch {
+      continue;
+    }
+
+    for (const item of messages) {
+      const text = String(item.text ?? "");
+
+      if (!text.toLowerCase().includes(searchKeyword.toLowerCase())) {
+        continue;
+      }
+
+      const peerUserId =
+        item.direction === "in" ? item.from : item.to;
+
+      const peerDeviceId =
+        item.direction === "in" ? item.fromDeviceId : item.toDeviceId;
+
+      results.push({
+        peerUserId,
+        peerDeviceId,
+        direction: item.direction ?? "unknown",
+        text,
+        timestamp: Number(item.timestamp ?? 0),
+        from: item.from,
+        fromDeviceId: item.fromDeviceId,
+        to: item.to,
+        toDeviceId: item.toDeviceId,
+        messageNumber: item.messageNumber,
+      });
+    }
+  }
+
+  results.sort((a, b) => {
+    return Number(b.timestamp) - Number(a.timestamp);
+  });
+
+  console.log("===== GLOBAL SEARCH RESULT =====");
+  console.log(`关键词：${searchKeyword}`);
+  console.log("");
+
+  if (results.length === 0) {
+    console.log("没有在任何会话中找到匹配消息。");
+    console.log("===============================");
+    return;
+  }
+
+  results.forEach((item, index) => {
+    const time = new Date(item.timestamp).toLocaleString();
+
+    console.log(`[${index + 1}] 会话：${item.peerUserId}/${item.peerDeviceId}`);
+    console.log(`时间：${time}`);
+    console.log(`方向：[${item.direction}]`);
+    console.log(
+      `消息编号：${item.messageNumber !== undefined ? item.messageNumber : "未知"}`
+    );
+    console.log(`发送方：${item.from}/${item.fromDeviceId}`);
+    console.log(`接收方：${item.to}/${item.toDeviceId}`);
+    console.log(`内容：${item.text}`);
+    console.log("");
+  });
+
+  console.log(`共找到 ${results.length} 条结果。`);
+  console.log("===============================");
+}
 function shortText(text: string, maxLength = 40) {
   if (text.length <= maxLength) {
     return text;
@@ -2063,6 +2159,13 @@ rl.on("line", (line) => {
     return;
   }
   
+  if (text.startsWith("/search-all ")) {
+    const keyword = text.slice("/search-all ".length);
+    showSearchAllResult(keyword);
+    rl.prompt();
+    return;
+  }
+
   if (text === "/history") {
   const messages = MessageStore.list(userId, deviceId, targetId, targetDeviceId);
 
