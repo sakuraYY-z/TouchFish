@@ -1163,6 +1163,7 @@ function sendChat(line: string) {
   timestamp: Date.now(),
   messageNumber,
   status: "sent",
+  read: true,
 });
 }
 
@@ -1772,6 +1773,7 @@ ws.on("message", (data) => {
           msg.ratchetPublicKey ?? null,
           Number(msg.previousSendCounter ?? 0)
         );
+        const isCurrent = isCurrentConversation(msg.from, msg.fromDeviceId);
 
         MessageStore.append(userId, deviceId, msg.from, msg.fromDeviceId, {
           direction: "in",
@@ -1782,7 +1784,7 @@ ws.on("message", (data) => {
           text: plaintext,
           timestamp: Date.now(),
           messageNumber: msg.messageNumber,
-          read: false,
+          read: isCurrent,
         });
 
         ws.send(
@@ -1813,7 +1815,7 @@ ws.on("message", (data) => {
           msg.fromDeviceId
         );
 
-        if (!muted) {
+        if (!isCurrent && !muted) {
           console.log();
           console.log(
             `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 发来一条消息，已后台保存。当前会话仍然是 ${targetId}/${targetDeviceId}。`
@@ -1851,6 +1853,7 @@ ws.on("message", (data) => {
       msg.ratchetPublicKey ?? null,
       Number(msg.previousSendCounter ?? 0)
       );
+      const isCurrent = isCurrentConversation(msg.from, msg.fromDeviceId);
       
       MessageStore.append(userId, deviceId, msg.from, msg.fromDeviceId, {
         direction: "in",
@@ -1861,7 +1864,7 @@ ws.on("message", (data) => {
         text: plaintext,
         timestamp: Date.now(),
         messageNumber: msg.messageNumber,
-        read: false,
+        read: isCurrent,
       });
 
       ws.send(
