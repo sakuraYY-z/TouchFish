@@ -109,6 +109,54 @@ function clearAllNotifications() {
   notifications.length = 0;
   console.log("所有非当前会话提醒已清空。");
 }
+
+function showSearchResult(keyword: string) {
+  const searchKeyword = keyword.trim();
+
+  if (!searchKeyword) {
+    console.log("用法：/search <关键词>");
+    return;
+  }
+
+  const messages = MessageStore.list(
+    userId,
+    deviceId,
+    targetId,
+    targetDeviceId
+  );
+
+  const results = messages.filter((item: any) => {
+    return String(item.text ?? "")
+      .toLowerCase()
+      .includes(searchKeyword.toLowerCase());
+  });
+
+  console.log("===== SEARCH RESULT =====");
+  console.log(`关键词：${searchKeyword}`);
+  console.log(`当前会话：${targetId}/${targetDeviceId}`);
+  console.log("");
+
+  if (results.length === 0) {
+    console.log("没有找到匹配的消息。");
+    console.log("=========================");
+    return;
+  }
+
+  results.forEach((item: any, index: number) => {
+    const time = new Date(item.timestamp).toLocaleString();
+    const direction = item.direction ?? "unknown";
+
+    console.log(
+      `[${index + 1}] [${time}] [${direction}] ${item.from}/${item.fromDeviceId} -> ${item.to}/${item.toDeviceId}`
+    );
+    console.log(item.text);
+    console.log("");
+  });
+
+  console.log(`共找到 ${results.length} 条结果。`);
+  console.log("=========================");
+}
+
 function shortText(text: string, maxLength = 40) {
   if (text.length <= maxLength) {
     return text;
@@ -1952,6 +2000,13 @@ rl.on("line", (line) => {
     return;
   }
 
+  if (text.startsWith("/search ")) {
+    const keyword = text.slice("/search ".length);
+    showSearchResult(keyword);
+    rl.prompt();
+    return;
+  }
+  
   if (text === "/history") {
   const messages = MessageStore.list(userId, deviceId, targetId, targetDeviceId);
 
@@ -2003,7 +2058,7 @@ rl.on("line", (line) => {
   }
 
   NotificationStore.markReadFrom(userId, deviceId, targetId, targetDeviceId);
-  
+
   rl.prompt();
   return;
   }
