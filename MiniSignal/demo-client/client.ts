@@ -109,6 +109,119 @@ function clearAllNotifications() {
   notifications.length = 0;
   console.log("所有非当前会话提醒已清空。");
 }
+function shortText(text: string, maxLength = 40) {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  return text.slice(0, maxLength) + "...";
+}
+
+function addPeer(
+  peers: Map<string, { userId: string; deviceId: string }>,
+  remoteUserId: string,
+  remoteDeviceId: string
+) {
+  const key = peerKey(remoteUserId, remoteDeviceId);
+
+  if (!peers.has(key)) {
+    peers.set(key, {
+      userId: remoteUserId,
+      deviceId: remoteDeviceId,
+    });
+  }
+}
+
+function showChats() {
+  const peers = new Map<string, { userId: string; deviceId: string }>();
+
+  addPeer(peers, targetId, targetDeviceId);
+
+  for (const contact of ContactStore.list(userId, deviceId)) {
+    addPeer(peers, contact.userId, contact.deviceId);
+  }
+
+  for (const item of NotificationStore.list(userId, deviceId)) {
+    addPeer(peers, item.from, item.fromDeviceId);
+  }
+
+  if (peers.size === 0) {
+    console.log("当前没有会话。");
+    return;
+  }
+
+  const summaries = Array.from(peers.values()).map((peer) => {
+    const messages = MessageStore.list(
+      userId,
+      deviceId,
+      peer.userId,
+      peer.deviceId
+    );
+
+    const unreadMessages = messages.filter((item: any) => {
+      return (
+        item.direction === "in" &&
+        item.from === peer.userId &&
+        item.fromDeviceId === peer.deviceId &&
+        item.read !== true
+      );
+    });
+
+    const unreadNotifications = NotificationStore.unread(userId, deviceId)
+      .filter((item) => {
+        return item.from === peer.userId && item.fromDeviceId === peer.deviceId;
+      });
+
+    const lastMessage =
+      messages.length > 0
+        ? messages.slice().sort((a: any, b: any) => {
+            return Number(a.timestamp) - Number(b.timestamp);
+          })[messages.length - 1]
+        : null;
+
+    const lastTimestamp = lastMessage
+      ? Number(lastMessage.timestamp)
+      : 0;
+
+    return {
+      peer,
+      messages,
+      unreadMessages,
+      unreadNotifications,
+      lastMessage,
+      lastTimestamp,
+    };
+  });
+
+  summaries.sort((a, b) => b.lastTimestamp - a.lastTimestamp);
+
+  console.log("===== CHATS =====");
+
+  for (const item of summaries) {
+    const current =
+      item.peer.userId === targetId && item.peer.deviceId === targetDeviceId;
+
+    console.log(`${current ? "*" : "-"} ${item.peer.userId}/${item.peer.deviceId}`);
+    console.log(`  未读消息: ${item.unreadMessages.length}`);
+    console.log(`  未读提醒: ${item.unreadNotifications.length}`);
+
+    if (item.lastMessage) {
+      const time = new Date(item.lastMessage.timestamp).toLocaleString();
+      console.log(
+        `  最后一条: [${item.lastMessage.direction}] ${shortText(
+          item.lastMessage.text
+        )}`
+      );
+      console.log(`  时间: ${time}`);
+    } else {
+      console.log("  最后一条: 暂无消息");
+    }
+
+    console.log("");
+  }
+
+  console.log("=================");
+}
 
 function fingerprint(publicKeyBase64: string) {
   const hash = crypto
@@ -1889,6 +2002,8 @@ rl.on("line", (line) => {
     console.log(`已自动标记 ${unreadIncoming.length} 条消息为已读。`);
   }
 
+  NotificationStore.markReadFrom(userId, deviceId, targetId, targetDeviceId);
+  
   rl.prompt();
   return;
   }
@@ -1981,6 +2096,12 @@ rl.on("line", (line) => {
       console.log(`已删除第 ${index} 条消息：${deleted.text}`);
     }
 
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/chats") {
+    showChats();
     rl.prompt();
     return;
   }
@@ -2129,28 +2250,28 @@ rl.on("line", (line) => {
 
   if (text.startsWith("/switch ")) {
     const parts = text.split(/\s+/);
-
     if (parts.length < 3) {
-      console.log("usage: /switch <userId> <deviceId>");
-      rl.prompt();
-      return;
-    }
-
-    targetId = parts[1];
-    targetDeviceId = parts[2];
-
-    clearNotificationsFrom(targetId, targetDeviceId);
-
-    resetInProgress = false;
-    pendingMessage = null;
-
-    loadCurrentSession();
-
-    console.log(`current chat target switched to ${targetId}/${targetDeviceId}`);
-    console.log("该会话的非当前会话提醒已清除。");
+    console.log("usage: /switch  ");
     rl.prompt();
     return;
   }
+
+  targetId = parts[1];
+  targetDeviceId = parts[2];
+
+  clearNotificationsFrom(targetId, targetDeviceId);
+  NotificationStore.markReadFrom(userId, deviceId, targetId, targetDeviceId);
+
+  resetInProgress = false;
+  pendingMessage = null;
+
+  loadCurrentSession();
+
+  console.log(`current chat target switched to ${targetId}/${targetDeviceId}`);
+  console.log("该会话的非当前会话提醒已标记为已读。");
+  rl.prompt();
+  return;
+}
 
   if (text === "/target") {
     console.log(`current target: ${targetId}/${targetDeviceId}`);
