@@ -1,4 +1,4 @@
-import { PrivateKey, PublicKey } from "@signalapp/libsignal-client";
+﻿import { PrivateKey, PublicKey } from "@signalapp/libsignal-client";
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
@@ -384,6 +384,12 @@ function showChats() {
       peer.userId,
       peer.deviceId
     );
+    const muted = ChatMetaStore.isMuted(
+      userId,
+      deviceId,
+      peer.userId,
+      peer.deviceId
+    );
 
     return {
       peer,
@@ -393,6 +399,7 @@ function showChats() {
       lastMessage,
       lastTimestamp,
       pinned,
+      muted,
     };
   });
 
@@ -410,9 +417,10 @@ function showChats() {
     const current =
       item.peer.userId === targetId && item.peer.deviceId === targetDeviceId;
     const pinMark = item.pinned ? "[置顶] " : "";
+    const muteMark = item.muted ? "[静音] " : "";
 
     console.log(
-      `${current ? "*" : "-"} ${pinMark}${item.peer.userId}/${item.peer.deviceId}`
+      `${current ? "*" : "-"} ${pinMark}${muteMark}${item.peer.userId}/${item.peer.deviceId}`
     );
     console.log(`  未读消息: ${item.unreadMessages.length}`);
     console.log(`  未读提醒: ${item.unreadNotifications.length}`);
@@ -1605,9 +1613,18 @@ ws.on("message", (data) => {
         note: "非当前会话请求建立 X3DH，会话已在后台处理",
       });
 
-      console.log(
-        `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 请求建立会话。当前会话仍然是 ${targetId}/${targetDeviceId}。`
+      const muted = ChatMetaStore.isMuted(
+        userId,
+        deviceId,
+        msg.from,
+        msg.fromDeviceId
       );
+
+      if (!muted) {
+        console.log(
+          `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 请求建立会话。当前会话仍然是 ${targetId}/${targetDeviceId}。`
+        );
+      }
     } else {
       switchCurrentTarget(msg.from, msg.fromDeviceId);
     }
@@ -1789,13 +1806,22 @@ ws.on("message", (data) => {
           note: "非当前会话收到一条新消息，已后台解密并保存到历史记录",
         });
 
-        console.log();
-        console.log(
-          `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 发来一条消息，已后台保存。当前会话仍然是 ${targetId}/${targetDeviceId}。`
+        const muted = ChatMetaStore.isMuted(
+          userId,
+          deviceId,
+          msg.from,
+          msg.fromDeviceId
         );
-        console.log(
-          `输入 /switch ${msg.from} ${msg.fromDeviceId} 后，再输入 /history 查看。`
-        );
+
+        if (!muted) {
+          console.log();
+          console.log(
+            `[非当前会话提醒] ${msg.from}/${msg.fromDeviceId} 发来一条消息，已后台保存。当前会话仍然是 ${targetId}/${targetDeviceId}。`
+          );
+          console.log(
+            `输入 /switch ${msg.from} ${msg.fromDeviceId} 后，再输入 /history 查看。`
+          );
+        }
       } catch (err) {
         console.error("Failed to decrypt non-current message:", err);
 
@@ -1909,9 +1935,18 @@ ws.on("message", (data) => {
           note: "非当前会话有一条离线消息，未自动解密",
         });
 
-        console.log(
-          `[非当前会话提醒] ${item.from}/${item.fromDeviceId} 有一条离线消息。当前会话仍然是 ${targetId}/${targetDeviceId}。`
+        const muted = ChatMetaStore.isMuted(
+          userId,
+          deviceId,
+          item.from,
+          item.fromDeviceId
         );
+
+        if (!muted) {
+          console.log(
+            `[非当前会话提醒] ${item.from}/${item.fromDeviceId} 有一条离线消息。当前会话仍然是 ${targetId}/${targetDeviceId}。`
+          );
+        }
 
         continue;
       }
@@ -2362,6 +2397,34 @@ rl.on("line", (line) => {
     );
 
     console.log(`已取消置顶当前会话：${targetId}/${targetDeviceId}`);
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/mute") {
+    ChatMetaStore.setMuted(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId,
+      true
+    );
+
+    console.log(`已静音当前会话：${targetId}/${targetDeviceId}`);
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/unmute") {
+    ChatMetaStore.setMuted(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId,
+      false
+    );
+
+    console.log(`已取消静音当前会话：${targetId}/${targetDeviceId}`);
     rl.prompt();
     return;
   }
