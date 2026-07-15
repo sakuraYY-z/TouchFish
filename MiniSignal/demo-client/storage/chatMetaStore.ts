@@ -7,6 +7,7 @@ export interface ChatMeta {
   pinned: boolean;
   muted: boolean;
   remark?: string;
+  archived?: boolean;
   updatedAt: number;
 }
 
@@ -70,6 +71,7 @@ export class ChatMetaStore {
         remoteDeviceId,
         pinned,
         muted: false,
+        archived: false,
         updatedAt: Date.now(),
       });
     }
@@ -119,6 +121,7 @@ export class ChatMetaStore {
         remoteDeviceId,
         pinned: false,
         muted,
+        archived: false,
         updatedAt: Date.now(),
       });
     }
@@ -178,6 +181,7 @@ export class ChatMetaStore {
         remoteDeviceId,
         pinned: false,
         muted: false,
+        archived: false,
         remark: remark && remark.trim() ? remark.trim() : undefined,
         updatedAt: Date.now(),
       });
@@ -201,5 +205,60 @@ export class ChatMetaStore {
     );
 
     return item?.remark ?? null;
+  }
+
+  static setArchived(
+  userId: string,
+  deviceId: string,
+  remoteUserId: string,
+  remoteDeviceId: string,
+  archived: boolean
+) {
+  const items = this.loadAll(userId, deviceId);
+  const key = chatKey(remoteUserId, remoteDeviceId);
+
+  const existing = items.find(
+    (item) => chatKey(item.remoteUserId, item.remoteDeviceId) === key
+  );
+
+  if (existing) {
+    existing.archived = archived;
+    existing.updatedAt = Date.now();
+
+    if (existing.pinned === undefined) {
+      existing.pinned = false;
+    }
+
+    if (existing.muted === undefined) {
+      existing.muted = false;
+    }
+  } else {
+    items.push({
+      remoteUserId,
+      remoteDeviceId,
+      pinned: false,
+      muted: false,
+      archived,
+      updatedAt: Date.now(),
+    });
+  }
+
+  this.saveAll(userId, deviceId, items);
+}
+
+static isArchived(
+  userId: string,
+  deviceId: string,
+  remoteUserId: string,
+  remoteDeviceId: string
+  ) {
+    const items = this.loadAll(userId, deviceId);
+
+    return items.some(
+      (item) =>
+      item.remoteUserId === remoteUserId &&
+      item.remoteDeviceId === remoteDeviceId &&
+      item.archived
+    );
   }
 }

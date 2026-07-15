@@ -116,6 +116,9 @@ function showHelp() {
   console.log("/help                 查看命令帮助");
   console.log("/history              查看当前会话历史");
   console.log("/chats                查看会话列表和未读统计");
+  console.log("/chats-all            查看全部会话，包括归档会话");
+  console.log("/archive              归档当前会话");
+  console.log("/unarchive            取消归档当前会话");
   console.log("/switch <user> <dev>  切换聊天对象");
   console.log("/search <关键词>       搜索当前会话消息");
   console.log("/search-all <关键词>   搜索所有会话消息");
@@ -352,7 +355,7 @@ function exportCurrentChat() {
   console.log(outputPath);
 }
 
-function showChats() {
+function showChats(includeArchived = false) {
   const peers = new Map<string, { userId: string; deviceId: string }>();
 
   addPeer(peers, targetId, targetDeviceId);
@@ -421,6 +424,12 @@ function showChats() {
       peer.userId,
       peer.deviceId
     );
+    const archived = ChatMetaStore.isArchived(
+      userId,
+      deviceId,
+      peer.userId,
+      peer.deviceId
+    );
 
     return {
       peer,
@@ -432,28 +441,43 @@ function showChats() {
       pinned,
       muted,
       remark,
+      archived,
     };
   });
+  const visibleSummaries = summaries.filter((item) => {
+  if (includeArchived) {
+    return true;
+  }
 
-  summaries.sort((a, b) => {
-    if (a.pinned !== b.pinned) {
-      return a.pinned ? -1 : 1;
-    }
-
-    return b.lastTimestamp - a.lastTimestamp;
+  return !item.archived;
   });
+  visibleSummaries.sort((a, b) => {
+  if (a.pinned !== b.pinned) {
+    return a.pinned ? -1 : 1;
+  }
+
+  return b.lastTimestamp - a.lastTimestamp;
+  });
+  
 
   console.log("===== CHATS =====");
 
-  for (const item of summaries) {
+  if (visibleSummaries.length === 0) {
+  console.log(includeArchived ? "当前没有任何会话。" : "当前没有未归档会话。");
+  console.log("=================");
+  return;
+  }
+
+  for (const item of visibleSummaries) {
     const current =
       item.peer.userId === targetId && item.peer.deviceId === targetDeviceId;
     const pinMark = item.pinned ? "[置顶] " : "";
     const muteMark = item.muted ? "[静音] " : "";
+    const archiveMark = item.archived ? "[归档] " : "";
     const remarkText = item.remark ? `${item.remark} ` : "";
 
     console.log(
-      `${current ? "*" : "-"} ${pinMark}${muteMark}${remarkText}${item.peer.userId}/${item.peer.deviceId}`
+  `${current ? "*" : "-"} ${pinMark}${muteMark}${archiveMark}${remarkText}${item.peer.userId}/${item.peer.deviceId}`
     );
     console.log(`  未读消息: ${item.unreadMessages.length}`);
     console.log(`  未读提醒: ${item.unreadNotifications.length}`);
@@ -472,6 +496,8 @@ function showChats() {
 
     console.log("");
   }
+ ;
+
 
   console.log("=================");
 }
@@ -2404,9 +2430,43 @@ rl.on("line", (line) => {
   }
 
   if (text === "/chats") {
-    showChats();
+    showChats(false);
     rl.prompt();
     return;
+  }
+
+  if (text === "/chats-all") {
+  showChats(true);
+  rl.prompt();
+  return;
+  }
+
+  if (text === "/archive") {
+  ChatMetaStore.setArchived(
+    userId,
+    deviceId,
+    targetId,
+    targetDeviceId,
+    true
+  );
+
+  console.log(`已归档当前会话：${targetId}/${targetDeviceId}`);
+  rl.prompt();
+  return;
+  }
+
+  if (text === "/unarchive") {
+    ChatMetaStore.setArchived(
+    userId,
+    deviceId,
+    targetId,
+    targetDeviceId,
+    false
+  );
+
+  console.log(`已取消归档当前会话：${targetId}/${targetDeviceId}`);
+  rl.prompt();
+  return;
   }
 
   if (text === "/help") {
