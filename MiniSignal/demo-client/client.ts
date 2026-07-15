@@ -29,6 +29,7 @@ let targetDeviceId = process.argv[5];
 
 let pendingSendAllText: string | null = null;
 let pendingSendAllTarget: string | null = null;
+let clearChatConfirmTarget: string | null = null;
 
 function isCurrentConversation(remoteUserId: string, remoteDeviceId: string) {
   return remoteUserId === targetId && remoteDeviceId === targetDeviceId;
@@ -123,6 +124,8 @@ function showHelp() {
   console.log("/search <关键词>       搜索当前会话消息");
   console.log("/search-all <关键词>   搜索所有会话消息");
   console.log("/export               导出当前会话聊天记录");
+  console.log("/clear-chat           清空当前会话聊天记录");
+  console.log("/clear-chat confirm   确认清空当前会话聊天记录");
   console.log("/pin                  置顶当前会话");
   console.log("/unpin                取消置顶当前会话");
   console.log("/mute                 静音当前会话");
@@ -2267,6 +2270,33 @@ rl.on("line", (line) => {
     return;
   }
 
+  if (text === "/clear-chat") {
+    clearChatConfirmTarget = `${targetId}/${targetDeviceId}`;
+
+    console.log("为了防止误删，请输入：/clear-chat confirm");
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/clear-chat confirm") {
+    const currentTarget = `${targetId}/${targetDeviceId}`;
+
+    if (clearChatConfirmTarget !== currentTarget) {
+      console.log("确认目标已变化，请重新输入 /clear-chat。");
+      clearChatConfirmTarget = null;
+      rl.prompt();
+      return;
+    }
+
+    MessageStore.clear(userId, deviceId, targetId, targetDeviceId);
+
+    clearChatConfirmTarget = null;
+
+    console.log(`已清空当前会话聊天记录：${targetId}/${targetDeviceId}`);
+    rl.prompt();
+    return;
+  }
+
   if (text.startsWith("/search ")) {
     const keyword = text.slice("/search ".length);
     showSearchResult(keyword);
@@ -2725,6 +2755,7 @@ rl.on("line", (line) => {
 
   resetInProgress = false;
   pendingMessage = null;
+  clearChatConfirmTarget = null;
 
   loadCurrentSession();
 
