@@ -111,6 +111,31 @@ function clearAllNotifications() {
   console.log("所有非当前会话提醒已清空。");
 }
 
+function showHelp() {
+  console.log("===== MiniSignal Commands =====");
+  console.log("/help                 查看命令帮助");
+  console.log("/history              查看当前会话历史");
+  console.log("/chats                查看会话列表和未读统计");
+  console.log("/switch <user> <dev>  切换聊天对象");
+  console.log("/search <关键词>       搜索当前会话消息");
+  console.log("/search-all <关键词>   搜索所有会话消息");
+  console.log("/export               导出当前会话聊天记录");
+  console.log("/pin                  置顶当前会话");
+  console.log("/unpin                取消置顶当前会话");
+  console.log("/mute                 静音当前会话");
+  console.log("/unmute               取消静音当前会话");
+  console.log("/remark <备注名>      设置当前会话备注");
+  console.log("/unremark             取消当前会话备注");
+  console.log("/notifications         查看非当前会话提醒");
+  console.log("/contacts             查看联系人");
+  console.log("/verify               查看身份验证状态");
+  console.log("/trust                信任当前会话身份");
+  console.log("/session              查看当前会话状态");
+  console.log("/pull                 拉取离线消息");
+  console.log("/requestReset          请求重置当前会话");
+  console.log("================================");
+}
+
 function showSearchResult(keyword: string) {
   const searchKeyword = keyword.trim();
 
@@ -390,6 +415,12 @@ function showChats() {
       peer.userId,
       peer.deviceId
     );
+    const remark = ChatMetaStore.getRemark(
+      userId,
+      deviceId,
+      peer.userId,
+      peer.deviceId
+    );
 
     return {
       peer,
@@ -400,6 +431,7 @@ function showChats() {
       lastTimestamp,
       pinned,
       muted,
+      remark,
     };
   });
 
@@ -418,9 +450,10 @@ function showChats() {
       item.peer.userId === targetId && item.peer.deviceId === targetDeviceId;
     const pinMark = item.pinned ? "[置顶] " : "";
     const muteMark = item.muted ? "[静音] " : "";
+    const remarkText = item.remark ? `${item.remark} ` : "";
 
     console.log(
-      `${current ? "*" : "-"} ${pinMark}${muteMark}${item.peer.userId}/${item.peer.deviceId}`
+      `${current ? "*" : "-"} ${pinMark}${muteMark}${remarkText}${item.peer.userId}/${item.peer.deviceId}`
     );
     console.log(`  未读消息: ${item.unreadMessages.length}`);
     console.log(`  未读提醒: ${item.unreadNotifications.length}`);
@@ -2376,6 +2409,12 @@ rl.on("line", (line) => {
     return;
   }
 
+  if (text === "/help") {
+    showHelp();
+    rl.prompt();
+    return;
+  }
+
   if (text === "/pin") {
     ChatMetaStore.setPinned(
       userId,
@@ -2414,6 +2453,42 @@ rl.on("line", (line) => {
     );
 
     console.log(`已静音当前会话：${targetId}/${targetDeviceId}`);
+    rl.prompt();
+    return;
+  }
+
+  if (text.startsWith("/remark ")) {
+    const remark = text.slice("/remark ".length).trim();
+
+    if (!remark) {
+      console.log("用法：/remark <备注名>");
+      rl.prompt();
+      return;
+    }
+
+    ChatMetaStore.setRemark(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId,
+      remark
+    );
+
+    console.log(`已为当前会话设置备注：${remark}`);
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/unremark") {
+    ChatMetaStore.setRemark(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId,
+      null
+    );
+
+    console.log(`已取消当前会话备注：${targetId}/${targetDeviceId}`);
     rl.prompt();
     return;
   }
@@ -2625,6 +2700,13 @@ rl.on("line", (line) => {
     );
     console.log("本地 session 已删除，下一条消息会重新建立 X3DH。");
 
+    rl.prompt();
+    return;
+  }
+
+  if (text.startsWith("/")) {
+    console.log(`未知命令：${text}`);
+    console.log("输入 /help 查看所有可用命令。");
     rl.prompt();
     return;
   }
