@@ -115,8 +115,9 @@ function clearAllNotifications() {
 function showHelp() {
   console.log("===== MiniSignal Commands =====");
   console.log("/help                 查看命令帮助");
-  console.log("/history              查看当前会话历史");
+  console.log("/history [数量|all]   查看当前会话历史，默认最近 20 条");
   console.log("/chats                查看会话列表和未读统计");
+  console.log("/chats <关键词>        按用户、设备或备注筛选会话");
   console.log("/chats-all            查看全部会话，包括归档会话");
   console.log("/unread               查看有未读消息或提醒的会话");
   console.log("/archived             查看已归档会话");
@@ -363,7 +364,8 @@ function exportCurrentChat() {
 
 type ChatListMode = "active" | "all" | "unread" | "archived";
 
-function showChats(mode: ChatListMode = "active") {
+function showChats(mode: ChatListMode = "active", keyword = "") {
+  const searchKeyword = keyword.trim().toLowerCase();
   const peers = new Map<string, { userId: string; deviceId: string }>();
 
   addPeer(peers, targetId, targetDeviceId);
@@ -455,6 +457,18 @@ function showChats(mode: ChatListMode = "active") {
   const visibleSummaries = summaries.filter((item) => {
     const hasUnread =
       item.unreadMessages.length > 0 || item.unreadNotifications.length > 0;
+    const peerText = [
+      item.peer.userId,
+      item.peer.deviceId,
+      `${item.peer.userId}/${item.peer.deviceId}`,
+      item.remark ?? "",
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    if (searchKeyword && !peerText.includes(searchKeyword)) {
+      return false;
+    }
 
     if (mode === "all") {
       return true;
@@ -482,6 +496,12 @@ function showChats(mode: ChatListMode = "active") {
   console.log("===== CHATS =====");
 
   if (visibleSummaries.length === 0) {
+    if (searchKeyword) {
+      console.log(`没有找到匹配的会话：${keyword.trim()}`);
+      console.log("=================");
+      return;
+    }
+
     if (mode === "all") {
       console.log("当前没有任何会话。");
     } else if (mode === "unread") {
@@ -2403,60 +2423,56 @@ rl.on("line", (line) => {
     return;
   }
 
-  if (text === "/history") {
-  const messages = MessageStore.list(userId, deviceId, targetId, targetDeviceId);
+  if (text === "/history" || text.startsWith("/history ")) {
+    const limit = parseHistoryLimit(text);
 
-  if (messages.length === 0) {
-    console.log("no message history");
+    if (limit === null) {
+      console.log("用法：/history [数量|all]");
+      console.log("例如：/history、/history 10、/history all");
+      rl.prompt();
+      return;
+    }
+
+    showCurrentHistory(limit);
+
+    const messages = MessageStore.list(
+      userId,
+      deviceId,
+      targetId,
+      targetDeviceId
+    );
+
+    const unreadIncoming = messages.filter((item: any) => {
+      return item.direction === "in" && item.read !== true;
+    });
+
+    if (unreadIncoming.length > 0) {
+      for (const item of unreadIncoming) {
+        item.read = true;
+        item.readAt = Date.now();
+
+        ws.send(
+          JSON.stringify({
+            type: "receipt",
+            receiptType: "read",
+            from: userId,
+            fromDeviceId: deviceId,
+            to: item.from,
+            toDeviceId: item.fromDeviceId,
+            messageNumber: item.messageNumber,
+            timestamp: Date.now(),
+          })
+        );
+      }
+
+      MessageStore.save(userId, deviceId, targetId, targetDeviceId, messages);
+      NotificationStore.markReadFrom(userId, deviceId, targetId, targetDeviceId);
+
+      console.log(`已自动标记 ${unreadIncoming.length} 条消息为已读。`);
+    }
+
     rl.prompt();
     return;
-  }
-
-  messages.forEach((item: any, index: number) => {
-    const time = new Date(item.timestamp).toLocaleString();
-    const status = item.direction === "out" ? item.status ?? "sent" : item.status ?? "received";
-
-    console.log(
-      `[${index + 1}] [${time}] #${item.messageNumber} ${item.from}/${item.fromDeviceId} -> ${item.to}/${item.toDeviceId}: ${item.text} [${status}]`
-    );
-  });
-
-  const unreadIncoming = messages.filter((item: any) => {
-    return (
-      item.direction === "in" &&
-      item.from === targetId &&
-      item.fromDeviceId === targetDeviceId &&
-      item.read !== true
-    );
-  });
-
-  for (const item of unreadIncoming) {
-    item.read = true;
-    item.readAt = Date.now();
-
-    ws.send(
-      JSON.stringify({
-        type: "receipt",
-        receiptType: "read",
-        from: userId,
-        fromDeviceId: deviceId,
-        to: item.from,
-        toDeviceId: item.fromDeviceId,
-        messageNumber: item.messageNumber,
-        timestamp: Date.now(),
-      })
-    );
-  }
-
-  if (unreadIncoming.length > 0) {
-    MessageStore.save(userId, deviceId, targetId, targetDeviceId, messages);
-    console.log(`已自动标记 ${unreadIncoming.length} 条消息为已读。`);
-  }
-
-  NotificationStore.markReadFrom(userId, deviceId, targetId, targetDeviceId);
-
-  rl.prompt();
-  return;
   }
 
   if (text === "/read") {
@@ -2557,8 +2573,22 @@ rl.on("line", (line) => {
     return;
   }
 
+  if (text.startsWith("/chats ")) {
+    const keyword = text.slice("/chats ".length);
+    showChats("active", keyword);
+    rl.prompt();
+    return;
+  }
+
   if (text === "/chats-all") {
     showChats("all");
+    rl.prompt();
+    return;
+  }
+
+  if (text.startsWith("/chats-all ")) {
+    const keyword = text.slice("/chats-all ".length);
+    showChats("all", keyword);
     rl.prompt();
     return;
   }
