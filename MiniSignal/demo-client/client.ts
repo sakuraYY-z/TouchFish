@@ -121,6 +121,8 @@ function showHelp() {
   console.log("/chats-all            查看全部会话，包括归档会话");
   console.log("/unread               查看有未读消息或提醒的会话");
   console.log("/archived             查看已归档会话");
+  console.log("/stats                查看会话统计");
+  console.log("/chat-info            查看当前会话详情");
   console.log("/archive              归档当前会话");
   console.log("/unarchive            取消归档当前会话");
   console.log("/switch <user> <dev>  切换聊天对象");
@@ -364,8 +366,7 @@ function exportCurrentChat() {
 
 type ChatListMode = "active" | "all" | "unread" | "archived";
 
-function showChats(mode: ChatListMode = "active", keyword = "") {
-  const searchKeyword = keyword.trim().toLowerCase();
+function buildChatSummaries() {
   const peers = new Map<string, { userId: string; deviceId: string }>();
 
   addPeer(peers, targetId, targetDeviceId);
@@ -379,11 +380,10 @@ function showChats(mode: ChatListMode = "active", keyword = "") {
   }
 
   if (peers.size === 0) {
-    console.log("当前没有会话。");
-    return;
+    return [];
   }
 
-  const summaries = Array.from(peers.values()).map((peer) => {
+  return Array.from(peers.values()).map((peer) => {
     const messages = MessageStore.list(
       userId,
       deviceId,
@@ -454,6 +454,17 @@ function showChats(mode: ChatListMode = "active", keyword = "") {
       archived,
     };
   });
+}
+
+function showChats(mode: ChatListMode = "active", keyword = "") {
+  const searchKeyword = keyword.trim().toLowerCase();
+  const summaries = buildChatSummaries();
+
+  if (summaries.length === 0) {
+    console.log("当前没有会话。");
+    return;
+  }
+
   const visibleSummaries = summaries.filter((item) => {
     const hasUnread =
       item.unreadMessages.length > 0 || item.unreadNotifications.length > 0;
@@ -544,10 +555,71 @@ function showChats(mode: ChatListMode = "active", keyword = "") {
 
     console.log("");
   }
- ;
-
 
   console.log("=================");
+}
+
+function showChatStats() {
+  const summaries = buildChatSummaries();
+  const unreadChats = summaries.filter((item) => {
+    return item.unreadMessages.length > 0 || item.unreadNotifications.length > 0;
+  });
+
+  const messageCount = summaries.reduce((total, item) => {
+    return total + item.messages.length;
+  }, 0);
+
+  console.log("===== CHAT STATS =====");
+  console.log(`当前账号: ${userId}/${deviceId}`);
+  console.log(`当前会话: ${targetId}/${targetDeviceId}`);
+  console.log(`总会话数: ${summaries.length}`);
+  console.log(`未归档会话: ${summaries.filter((item) => !item.archived).length}`);
+  console.log(`归档会话: ${summaries.filter((item) => item.archived).length}`);
+  console.log(`未读会话: ${unreadChats.length}`);
+  console.log(`置顶会话: ${summaries.filter((item) => item.pinned).length}`);
+  console.log(`静音会话: ${summaries.filter((item) => item.muted).length}`);
+  console.log(`备注会话: ${summaries.filter((item) => item.remark).length}`);
+  console.log(`消息总数: ${messageCount}`);
+  console.log("======================");
+}
+
+function showCurrentChatInfo() {
+  const summary = buildChatSummaries().find((item) => {
+    return (
+      item.peer.userId === targetId &&
+      item.peer.deviceId === targetDeviceId
+    );
+  });
+
+  console.log("===== CHAT INFO =====");
+  console.log(`会话: ${targetId}/${targetDeviceId}`);
+
+  if (!summary) {
+    console.log("当前会话暂无本地记录。");
+    console.log("=====================");
+    return;
+  }
+
+  console.log(`备注: ${summary.remark ?? "无"}`);
+  console.log(`置顶: ${summary.pinned ? "是" : "否"}`);
+  console.log(`静音: ${summary.muted ? "是" : "否"}`);
+  console.log(`归档: ${summary.archived ? "是" : "否"}`);
+  console.log(`消息数: ${summary.messages.length}`);
+  console.log(`未读消息: ${summary.unreadMessages.length}`);
+  console.log(`未读提醒: ${summary.unreadNotifications.length}`);
+
+  if (summary.lastMessage) {
+    const time = new Date(summary.lastMessage.timestamp).toLocaleString();
+    console.log(`最后消息时间: ${time}`);
+    console.log(
+      `最后消息方向: ${summary.lastMessage.direction ?? "unknown"}`
+    );
+    console.log(`最后消息内容: ${shortText(summary.lastMessage.text)}`);
+  } else {
+    console.log("最后消息: 暂无消息");
+  }
+
+  console.log("=====================");
 }
 
 function fingerprint(publicKeyBase64: string) {
@@ -2601,6 +2673,18 @@ rl.on("line", (line) => {
 
   if (text === "/archived") {
     showChats("archived");
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/stats") {
+    showChatStats();
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/chat-info") {
+    showCurrentChatInfo();
     rl.prompt();
     return;
   }
