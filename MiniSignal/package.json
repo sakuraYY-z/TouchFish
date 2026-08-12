@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-  "test": "set NODE_ENV=test&& set MINISIGNAL_DB_PATH=local-server/storage/minisignal-test.db&& tsx tests/run-tests.ts&& npm run test:client",
+  "test": "npm run test:unit && npm run test:client",
+  "test:unit": "set NODE_ENV=test&& set MINISIGNAL_DB_PATH=local-server/storage/minisignal-test.db&& tsx tests/run-tests.ts",
   "test:client": "tsx tests/client-command-smoke.ts",
   "db:status": "tsx local-server/db-status.ts",
   "db:cleanup": "tsx local-server/db-cleanup.ts",

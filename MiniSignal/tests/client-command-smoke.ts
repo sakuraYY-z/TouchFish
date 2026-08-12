@@ -4,17 +4,22 @@ import path from "path";
 
 const projectRoot = path.resolve(__dirname, "..");
 
-const input = [
+const commands = [
   "/help",
   "/chats",
   "/chats bob",
+  "/chats nobody",
+  "/chats-all",
+  "/chats-all bob",
+  "/unread",
+  "/archived",
   "/history 5",
   "/history all",
   "/history abc",
   "/stats",
   "/chat-info",
   "/exit",
-].join("\n");
+];
 
 const result = spawnSync(
   process.execPath,
@@ -28,21 +33,39 @@ const result = spawnSync(
   ],
   {
     cwd: projectRoot,
-    input,
+    input: commands.join("\n"),
     encoding: "utf8",
     timeout: 15000,
   }
 );
 
 assert.strictEqual(result.status, 0, result.stderr || result.stdout);
-assert.match(result.stdout, /MiniSignal Commands/);
-assert.match(result.stdout, /\/chats <.+>/);
-assert.match(result.stdout, /===== CHATS =====/);
-assert.match(result.stdout, /===== HISTORY =====/);
-assert.match(result.stdout, /\/history \[.+\|all\]/);
-assert.match(result.stdout, /===== CHAT STATS =====/);
-assert.match(result.stdout, /===== CHAT INFO =====/);
-assert.match(result.stdout, /MiniSignal/);
 assert.strictEqual(result.stderr.trim(), "");
 
-console.log("client command smoke test passed");
+const output = result.stdout;
+
+function expectOutput(pattern: RegExp, description: string) {
+  assert.match(output, pattern, `missing output: ${description}`);
+}
+
+expectOutput(/MiniSignal Commands/, "/help header");
+expectOutput(/\/chats <.+>/, "/help mentions chat filtering");
+expectOutput(/\/history \[.+\|all\]/, "/help mentions history limit");
+expectOutput(/\/unread/, "/help mentions unread chats");
+expectOutput(/\/archived/, "/help mentions archived chats");
+expectOutput(/\/stats/, "/help mentions stats");
+expectOutput(/\/chat-info/, "/help mentions chat-info");
+expectOutput(/\/exit/, "/help mentions exit");
+
+expectOutput(/===== CHATS =====/, "chat list output");
+expectOutput(/bob\/phone/, "chat filter can find bob/phone");
+expectOutput(/nobody/, "chat filter no-match path includes keyword");
+
+expectOutput(/===== HISTORY =====/, "history output");
+expectOutput(/\/history/, "invalid history usage output");
+
+expectOutput(/===== CHAT STATS =====/, "chat stats output");
+expectOutput(/===== CHAT INFO =====/, "chat info output");
+expectOutput(/MiniSignal/, "client startup or exit output");
+
+console.log(`client command smoke test passed (${commands.length} commands)`);
