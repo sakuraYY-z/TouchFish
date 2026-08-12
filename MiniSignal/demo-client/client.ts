@@ -115,9 +115,11 @@ function clearAllNotifications() {
 function showHelp() {
   console.log("===== MiniSignal Commands =====");
   console.log("/help                 查看命令帮助");
-  console.log("/history [数量|all]   查看当前会话历史，默认最近 20 条");
+  console.log("/history              查看当前会话历史");
   console.log("/chats                查看会话列表和未读统计");
   console.log("/chats-all            查看全部会话，包括归档会话");
+  console.log("/unread               查看有未读消息或提醒的会话");
+  console.log("/archived             查看已归档会话");
   console.log("/archive              归档当前会话");
   console.log("/unarchive            取消归档当前会话");
   console.log("/switch <user> <dev>  切换聊天对象");
@@ -139,6 +141,7 @@ function showHelp() {
   console.log("/session              查看当前会话状态");
   console.log("/pull                 拉取离线消息");
   console.log("/requestReset          请求重置当前会话");
+  console.log("/exit                 退出客户端");
   console.log("================================");
 }
 
@@ -187,52 +190,6 @@ function showSearchResult(keyword: string) {
 
   console.log(`共找到 ${results.length} 条结果。`);
   console.log("=========================");
-}
-
-function parseHistoryLimit(text: string): number | "all" | null {
-  const parts = text.trim().split(/\s+/);
-
-  if (parts.length === 1) {
-    return 20;
-  }
-
-  if (parts.length !== 2) {
-    return null;
-  }
-
-  if (parts[1] === "all") {
-    return "all";
-  }
-
-  const limit = Number(parts[1]);
-
-  if (!Number.isInteger(limit) || limit <= 0) {
-    return null;
-  }
-
-  return limit;
-}
-
-function showCurrentHistory(limit: number | "all") {
-  const messages = MessageStore.list(userId, deviceId, targetId, targetDeviceId);
-  const visibleMessages = limit === "all" ? messages : messages.slice(-limit);
-
-  if (visibleMessages.length === 0) {
-    console.log("no message history");
-    return;
-  }
-
-  visibleMessages.forEach((item: any, index: number) => {
-    const time = new Date(item.timestamp).toLocaleString();
-    const status =
-      item.direction === "out"
-        ? item.status ?? "sent"
-        : item.status ?? "received";
-
-    console.log(
-      `[${index + 1}] [${time}] #${item.messageNumber} ${item.from}/${item.fromDeviceId} -> ${item.to}/${item.toDeviceId}: ${item.text} [${status}]`
-    );
-  });
 }
 
 function showSearchAllResult(keyword: string) {
@@ -404,7 +361,9 @@ function exportCurrentChat() {
   console.log(outputPath);
 }
 
-function showChats(includeArchived = false) {
+type ChatListMode = "active" | "all" | "unread" | "archived";
+
+function showChats(mode: ChatListMode = "active") {
   const peers = new Map<string, { userId: string; deviceId: string }>();
 
   addPeer(peers, targetId, targetDeviceId);
@@ -494,27 +453,47 @@ function showChats(includeArchived = false) {
     };
   });
   const visibleSummaries = summaries.filter((item) => {
-  if (includeArchived) {
-    return true;
-  }
+    const hasUnread =
+      item.unreadMessages.length > 0 || item.unreadNotifications.length > 0;
 
-  return !item.archived;
+    if (mode === "all") {
+      return true;
+    }
+
+    if (mode === "unread") {
+      return !item.archived && hasUnread;
+    }
+
+    if (mode === "archived") {
+      return item.archived;
+    }
+
+    return !item.archived;
   });
   visibleSummaries.sort((a, b) => {
-  if (a.pinned !== b.pinned) {
-    return a.pinned ? -1 : 1;
-  }
+    if (a.pinned !== b.pinned) {
+      return a.pinned ? -1 : 1;
+    }
 
-  return b.lastTimestamp - a.lastTimestamp;
+    return b.lastTimestamp - a.lastTimestamp;
   });
   
 
   console.log("===== CHATS =====");
 
   if (visibleSummaries.length === 0) {
-  console.log(includeArchived ? "当前没有任何会话。" : "当前没有未归档会话。");
-  console.log("=================");
-  return;
+    if (mode === "all") {
+      console.log("当前没有任何会话。");
+    } else if (mode === "unread") {
+      console.log("当前没有未读会话。");
+    } else if (mode === "archived") {
+      console.log("当前没有归档会话。");
+    } else {
+      console.log("当前没有未归档会话。");
+    }
+
+    console.log("=================");
+    return;
   }
 
   for (const item of visibleSummaries) {
@@ -526,7 +505,7 @@ function showChats(includeArchived = false) {
     const remarkText = item.remark ? `${item.remark} ` : "";
 
     console.log(
-  `${current ? "*" : "-"} ${pinMark}${muteMark}${archiveMark}${remarkText}${item.peer.userId}/${item.peer.deviceId}`
+      `${current ? "*" : "-"} ${pinMark}${muteMark}${archiveMark}${remarkText}${item.peer.userId}/${item.peer.deviceId}`
     );
     console.log(`  未读消息: ${item.unreadMessages.length}`);
     console.log(`  未读提醒: ${item.unreadNotifications.length}`);
@@ -1416,6 +1395,73 @@ function generateRatchetKeyPair() {
     privateKeyBase64: serializePrivateKey(privateKey),
     publicKeyBase64: serializePublicKey(privateKey.getPublicKey()),
   };
+}
+
+function parseHistoryLimit(text: string) {
+  const parts = text.split(/\s+/);
+
+  if (parts.length === 1) {
+    return 20;
+  }
+
+  const arg = parts[1];
+
+  if (arg === "all") {
+    return "all";
+  }
+
+  const limit = Number(arg);
+
+  if (!Number.isInteger(limit) || limit <= 0) {
+    return null;
+  }
+
+  return limit;
+}
+
+function showCurrentHistory(limit: number | "all") {
+  const messages = MessageStore.list(
+    userId,
+    deviceId,
+    targetId,
+    targetDeviceId
+  );
+
+  if (messages.length === 0) {
+    console.log("当前会话暂无历史消息。");
+    return;
+  }
+
+  const sorted = messages
+    .slice()
+    .sort((a: any, b: any) => Number(a.timestamp) - Number(b.timestamp));
+
+  const visible =
+    limit === "all" ? sorted : sorted.slice(Math.max(0, sorted.length - limit));
+
+  console.log("===== HISTORY =====");
+  console.log(`当前会话：${targetId}/${targetDeviceId}`);
+
+  if (limit === "all") {
+    console.log(`显示：全部 ${visible.length} 条`);
+  } else {
+    console.log(`显示：最近 ${visible.length}/${sorted.length} 条`);
+  }
+
+  console.log("");
+
+  visible.forEach((item: any, index: number) => {
+    const time = new Date(item.timestamp).toLocaleString();
+    const direction = item.direction ?? "unknown";
+
+    console.log(
+      `[${index + 1}] [${time}] [${direction}] ${item.from}/${item.fromDeviceId} -> ${item.to}/${item.toDeviceId}`
+    );
+    console.log(item.text);
+    console.log("");
+  });
+
+  console.log("===================");
 }
 
 const ws = new WebSocket("ws://localhost:8080");
@@ -2357,56 +2403,60 @@ rl.on("line", (line) => {
     return;
   }
 
-  if (text === "/history" || text.startsWith("/history ")) {
-    const limit = parseHistoryLimit(text);
+  if (text === "/history") {
+  const messages = MessageStore.list(userId, deviceId, targetId, targetDeviceId);
 
-    if (limit === null) {
-      console.log("用法：/history [数量|all]");
-      console.log("例如：/history、/history 10、/history all");
-      rl.prompt();
-      return;
-    }
-
-    showCurrentHistory(limit);
-
-    const messages = MessageStore.list(
-      userId,
-      deviceId,
-      targetId,
-      targetDeviceId
-    );
-
-    const unreadIncoming = messages.filter((item: any) => {
-      return item.direction === "in" && item.read !== true;
-    });
-
-    if (unreadIncoming.length > 0) {
-      for (const item of unreadIncoming) {
-        item.read = true;
-        item.readAt = Date.now();
-
-        ws.send(
-          JSON.stringify({
-            type: "receipt",
-            receiptType: "read",
-            from: userId,
-            fromDeviceId: deviceId,
-            to: item.from,
-            toDeviceId: item.fromDeviceId,
-            messageNumber: item.messageNumber,
-            timestamp: Date.now(),
-          })
-        );
-      }
-
-      MessageStore.save(userId, deviceId, targetId, targetDeviceId, messages);
-      NotificationStore.markReadFrom(userId, deviceId, targetId, targetDeviceId);
-
-      console.log(`已自动标记 ${unreadIncoming.length} 条消息为已读。`);
-    }
-
+  if (messages.length === 0) {
+    console.log("no message history");
     rl.prompt();
     return;
+  }
+
+  messages.forEach((item: any, index: number) => {
+    const time = new Date(item.timestamp).toLocaleString();
+    const status = item.direction === "out" ? item.status ?? "sent" : item.status ?? "received";
+
+    console.log(
+      `[${index + 1}] [${time}] #${item.messageNumber} ${item.from}/${item.fromDeviceId} -> ${item.to}/${item.toDeviceId}: ${item.text} [${status}]`
+    );
+  });
+
+  const unreadIncoming = messages.filter((item: any) => {
+    return (
+      item.direction === "in" &&
+      item.from === targetId &&
+      item.fromDeviceId === targetDeviceId &&
+      item.read !== true
+    );
+  });
+
+  for (const item of unreadIncoming) {
+    item.read = true;
+    item.readAt = Date.now();
+
+    ws.send(
+      JSON.stringify({
+        type: "receipt",
+        receiptType: "read",
+        from: userId,
+        fromDeviceId: deviceId,
+        to: item.from,
+        toDeviceId: item.fromDeviceId,
+        messageNumber: item.messageNumber,
+        timestamp: Date.now(),
+      })
+    );
+  }
+
+  if (unreadIncoming.length > 0) {
+    MessageStore.save(userId, deviceId, targetId, targetDeviceId, messages);
+    console.log(`已自动标记 ${unreadIncoming.length} 条消息为已读。`);
+  }
+
+  NotificationStore.markReadFrom(userId, deviceId, targetId, targetDeviceId);
+
+  rl.prompt();
+  return;
   }
 
   if (text === "/read") {
@@ -2502,15 +2552,27 @@ rl.on("line", (line) => {
   }
 
   if (text === "/chats") {
-    showChats(false);
+    showChats("active");
     rl.prompt();
     return;
   }
 
   if (text === "/chats-all") {
-  showChats(true);
-  rl.prompt();
-  return;
+    showChats("all");
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/unread") {
+    showChats("unread");
+    rl.prompt();
+    return;
+  }
+
+  if (text === "/archived") {
+    showChats("archived");
+    rl.prompt();
+    return;
   }
 
   if (text === "/archive") {
@@ -2834,6 +2896,20 @@ rl.on("line", (line) => {
     console.log("本地 session 已删除，下一条消息会重新建立 X3DH。");
 
     rl.prompt();
+    return;
+  }
+
+  if (text === "/exit") {
+    console.log("已退出 MiniSignal 客户端。");
+    rl.close();
+
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.close();
+    } else {
+      ws.once("error", () => {});
+    }
+
+    setTimeout(() => process.exit(0), 20);
     return;
   }
 
