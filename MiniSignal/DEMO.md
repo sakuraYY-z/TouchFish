@@ -95,5 +95,6 @@ established.
 ```bash
 cd /d D:\GITcangku\TouchFish\MiniSignal
 npm test
+npm run test:client
 npx tsc -p tsconfig.json --noEmit
 ```
